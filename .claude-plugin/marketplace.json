@@ -1,0 +1,45 @@
+{
+  "name": "mjfork",
+  "description": "Footer and pane tools for Claude Code sessions, and a prompt-cache timer with handoff notes.",
+  "owner": {
+    "name": "Michael Fork"
+  },
+  "plugins": [
+    {
+      "name": "cockpit",
+      "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer. Four of them need herdr; cache-timer does not. Has no code of its own.",
+      "source": "./plugins/cockpit",
+      "category": "productivity"
+    },
+    {
+      "name": "turn-mode",
+      "description": "How a turn ends, per session: async (summary, then a Needs-you ask or possible next steps), real-time (just ends) or agentic (one status line for the driving agent); injected with the prompt when it changes; a footer toggle left of the heaviest sessions",
+      "source": "./plugins/turn-mode",
+      "category": "productivity"
+    },
+    {
+      "name": "ctx-bar",
+      "description": "Color-coded bar at the bottom of the footer's right-hand block, showing what fills the context window by tool; hover a segment for its biggest chunks",
+      "source": "./plugins/ctx-bar",
+      "category": "productivity"
+    },
+    {
+      "name": "ctx-heavy",
+      "description": "Second footer line under herdr-jump: the heaviest herdr sessions by context, wherever they are, click one to go there",
+      "source": "./plugins/ctx-heavy",
+      "category": "productivity"
+    },
+    {
+      "name": "herdr-jump",
+      "description": "Footer label with the current herdr pane (e.g. herdr w8:p2); /jump takes you to a pane (a picker of workspace › tab › pane with type-to-filter, or /jump <pane id | workspace | words>; /ws: hidden alias); /needs-me (or the footer ⚑ count) opens the list of agents waiting on you, /needs-me-next jumps to the first one; /jump-back returns to the previous pane",
+      "source": "./plugins/herdr-jump",
+      "category": "productivity"
+    },
+    {
+      "name": "cache-timer",
+      "description": "Footer countdown of the main prompt cache (yellow near expiry, red once expired); a confirm card before a prompt re-sends an expired cache at full price; optionally writes a handoff note to disk shortly before the cache expires, so a new session can resume from it; writes each pane's cache state for cache-state.sh",
+      "source": "./plugins/cache-timer",
+      "category": "productivity"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "ctx-heavy",
+  "version": "0.4.1",
+  "description": "Second footer line under herdr-jump: the heaviest herdr sessions by context, wherever they are, click one to go there",
+  "author": {
+    "name": "Michael Fork"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/mjfork/workbench",
+  "repository": "https://github.com/mjfork/workbench",
+  "types": "./types/index.d.ts",
+  "dependencies": [
+    "herdr-jump"
+  ]
+}

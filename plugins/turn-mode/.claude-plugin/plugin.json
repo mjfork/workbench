@@ -1,0 +1,15 @@
+{
+  "name": "turn-mode",
+  "version": "0.4.4",
+  "description": "How a turn ends, per session: async (summary, then a Needs-you ask or possible next steps), real-time (just ends) or agentic (one status line for the driving agent); injected with the prompt when it changes; a footer toggle left of the heaviest sessions",
+  "author": {
+    "name": "Michael Fork"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/mjfork/workbench",
+  "repository": "https://github.com/mjfork/workbench",
+  "types": "./types/index.d.ts",
+  "dependencies": [
+    "ctx-bar"
+  ]
+}

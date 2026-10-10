@@ -1,0 +1,15 @@
+{
+  "name": "ctx-bar",
+  "version": "0.3.2",
+  "description": "Color-coded bar at the bottom of the footer's right-hand block, showing what fills the context window by tool; hover a segment for its biggest chunks",
+  "author": {
+    "name": "Michael Fork"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/mjfork/workbench",
+  "repository": "https://github.com/mjfork/workbench",
+  "types": "./types/index.d.ts",
+  "dependencies": [
+    "ctx-heavy"
+  ]
+}

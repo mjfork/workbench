@@ -1,0 +1,18 @@
+{
+  "name": "cockpit",
+  "version": "1.0.0",
+  "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer. Four of them need herdr; cache-timer does not. Has no code of its own.",
+  "author": {
+    "name": "Michael Fork"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/mjfork/workbench",
+  "repository": "https://github.com/mjfork/workbench",
+  "dependencies": [
+    "turn-mode",
+    "ctx-bar",
+    "ctx-heavy",
+    "herdr-jump",
+    "cache-timer"
+  ]
+}
