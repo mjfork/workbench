@@ -1,6 +1,6 @@
 {
   "name": "cache-timer",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "Footer countdown of the main prompt cache (yellow near expiry, red once expired); a confirm card before a prompt re-sends an expired cache at full price; optionally writes a handoff note to disk shortly before the cache expires, so a new session can resume from it; writes each pane's cache state for cache-state.sh",
   "author": {
     "name": "Michael Fork"
@@ -14,7 +14,7 @@
       "type": "number",
       "title": "Handoff note, minutes before the cache expires",
       "description": "While a session sits idle, the model writes a handoff note to disk this many minutes before the prompt cache expires, so you can resume from it. 0 turns it off. Not used on the 5-minute cache tier.",
-      "default": 5
+      "default": 10
     },
     "handoffMinTokens": {
       "type": "number",

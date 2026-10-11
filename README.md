@@ -80,20 +80,42 @@ Sometimes you want a summary and a clear ask. Sometimes you're watching and want
 
 A plugin installs what it needs. `turn-mode` → `ctx-bar` → `ctx-heavy` → `herdr-jump`, so installing any one brings the ones after it. That chain also sets the order they draw in, which is what lines the footer up on the right.
 
+## Commands
+
+| Command | Plugin | What it does |
+|---|---|---|
+| `/jump` | `herdr-jump` | Opens a picker of every herdr pane (workspace › tab › pane); type to filter, pick one to go there |
+| `/jump <pane>` | `herdr-jump` | Goes straight to a pane by its ID, e.g. `/jump w8N:p2` |
+| `/jump <workspace>` | `herdr-jump` | Goes to a workspace by its ID or number |
+| `/jump <words>` | `herdr-jump` | Matches the words against workspace, tab and pane titles: one match jumps there, several open the picker already filtered |
+| `/jump-back` | `herdr-jump` | Returns to the pane you were in before this one |
+| `/needs-me` | `herdr-jump` | Lists every pane waiting on you, asks and permission dialogs; click one to go there, or dismiss an ask |
+| `/needs-me-next` | `herdr-jump` | Jumps to the next pane waiting on you: dialogs first, then the longest wait; never this pane |
+| `/ctxbar` | `ctx-bar` | Prints the context breakdown by kind, with the biggest chunks of each |
+| `/ctxbar toggle` | `ctx-bar` | Hides or shows the footer bar |
+
+The `herdr-jump` commands exist only in sessions running inside herdr.
+
+The footer is clickable too:
+
+- `⚑ N` or `+N` opens `/needs-me`; a pane ID next to it goes to that pane.
+- A pane ID in `ctx-heavy`'s list goes to that pane.
+- `turn-mode`'s label swaps async and real-time. Agentic is set by the driving agent; a click returns it to async.
+
 ## Settings
 
 Change them in `/config`, or in `settings.json` under `pluginConfigs["<plugin>"].options`. A change reloads the plugin.
 
 | Plugin | Setting | Default | Meaning |
 |---|---|---|---|
-| `cache-timer` | `handoffLeadMinutes` | 5 (0 = off) | Minutes before expiry that the [handoff](docs/handoff.md) runs |
+| `cache-timer` | `handoffLeadMinutes` | 10 (0 = off) | Minutes before expiry that the [handoff](docs/handoff.md) runs |
 | | `handoffMinTokens` | 200000 (0 = any) | Smaller sessions get no handoff: rebuilding them costs little |
 
 The cache lifetime (1 hour or 5 minutes) is read from the transcript. The other plugins have no settings.
 
 ## Bonus: the status line
 
-A plugin can't install a status line, so this one is a plain script. Three lines: directory, project, model and context; cost and session/week usage with reset times; `user@host` and your Claude login.
+A plugin can't install a status line, so this one is a plain script. Three lines: directory, project, model and context; session and week usage with reset times, then cost; your Claude login and organization.
 
 <details>
 <summary>Set it up</summary>

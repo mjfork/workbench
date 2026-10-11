@@ -1,7 +1,7 @@
 {
   "name": "herdr-jump",
-  "version": "0.10.4",
-  "description": "Footer label with the current herdr pane (e.g. herdr w8:p2); /jump takes you to a pane (a picker of workspace › tab › pane with type-to-filter, or /jump <pane id | workspace | words>; /ws: hidden alias); /needs-me (or the footer ⚑ count) opens the list of agents waiting on you, /needs-me-next jumps to the first one; /jump-back returns to the previous pane",
+  "version": "0.10.5",
+  "description": "Footer label with the current herdr pane (e.g. herdr w8:p2); /jump takes you to a pane (a picker of workspace › tab › pane with type-to-filter, or /jump <pane id | workspace | words>); /needs-me (or the footer ⚑ count) opens the list of agents waiting on you, /needs-me-next jumps to the first one; /jump-back returns to the previous pane",
   "author": {
     "name": "Michael Fork"
   },

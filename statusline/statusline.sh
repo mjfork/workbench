@@ -1,6 +1,6 @@
 #!/bin/bash
-# Claude Code status line: directory, project, model and context on line 1; cost and session/week usage on line 2;
-# user@host and the Claude login on line 3. Needs jq. Times use the machine time zone, or STATUSLINE_TZ (e.g. America/Chicago).
+# Claude Code status line: directory, project, model and context on line 1; session/week usage and cost on line 2;
+# the Claude login (email, organization) on line 3. Needs jq. Times use the machine time zone, or STATUSLINE_TZ (e.g. America/Chicago).
 exec 2>/dev/null
 command -v jq >/dev/null || exit 0
 input=$(cat)
@@ -22,12 +22,12 @@ s5=$(q '.rate_limits.five_hour.used_percentage // empty | numbers | round')
 r5=$(q '.rate_limits.five_hour.resets_at // empty | numbers | floor')
 s7=$(q '.rate_limits.seven_day.used_percentage // empty | numbers | round')
 r7=$(q '.rate_limits.seven_day.resets_at // empty | numbers | floor')
-# Line 1: directory (first and last component only), project, model, context
+# Line 1: directory (first and last component only once it is over 20 characters), project, model, context
 l1=""
 if [ -n "$cwd" ]; then
   case "$cwd" in "$HOME") d="~" ;; "$HOME"/*) d="~${cwd#"$HOME"}" ;; *) d=$cwd ;; esac
   case "$d" in "~/"*) root="~/"; rest=${d#"~/"} ;; /*) root="/"; rest=${d#/} ;; *) root=""; rest="" ;; esac
-  if [ -n "$rest" ]; then
+  if [ -n "$rest" ] && [ "${#d}" -gt 20 ]; then
     first=${rest%%/*}; last=${rest##*/}
     mid=${rest#"$first"}; mid=${mid%"$last"}
     [ -n "$mid" ] && [ "$mid" != "/" ] && d="$root$first/…/$last"
@@ -41,10 +41,9 @@ if [ -n "$pct" ]; then
   if [ -n "$used" ] && [ -n "$size" ]; then l1="$l1 ${Y}ctx $pct% ($(k "$used")/$(k "$size"))$R"
   else l1="$l1 ${Y}ctx $pct%$R"; fi
 fi
-# Line 2: cost, session and week usage with reset times
+# Line 2: session and week usage with reset times, then cost
 l2=""
 add2() { [ -n "$l2" ] && l2="$l2 · "; l2="$l2$1"; }
-[ -n "$cost" ] && add2 "$M$(printf '$%.2f' "$cost")$R"
 if [ -n "$s5" ]; then
   t=""; [ -n "$r5" ] && t=$(ts "$r5" '+%-I:%M %p %Z')
   if [ -n "$t" ]; then add2 "${C}session $s5% (resets $t)$R"; else add2 "${C}session $s5%$R"; fi
@@ -53,15 +52,16 @@ if [ -n "$s7" ]; then
   t=""; [ -n "$r7" ] && t=$(ts "$r7" '+%a %-I:%M %p %Z')
   if [ -n "$t" ]; then add2 "${Y}week $s7% (resets $t)$R"; else add2 "${Y}week $s7%$R"; fi
 fi
-# Line 3: local user@host, then the Claude login (email, org)
-l3="$G$(whoami)@$(hostname -s)$R"
+[ -n "$cost" ] && add2 "$M$(printf '$%.2f' "$cost")$R"
+# Line 3: the Claude login (email, org)
+l3=""
 us=$(printf '\037')
 acct=$(jq -r "$clean"' [.oauthAccount.emailAddress // "", .oauthAccount.organizationName // ""] | map(strings | clean) | join("\u001f")' "${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json")
 email=${acct%%"$us"*}; org=${acct#*"$us"}
-[ -n "$email" ] && l3="$l3 · $G$email$R"
-[ -n "$org" ] && l3="$l3 · $B$org$R"
+[ -n "$email" ] && l3="$G$email$R"
+[ -n "$org" ] && l3="${l3:+$l3 · }$B$org$R"
 printf '%s' "$l1"
 [ -n "$l2" ] && printf '\n%s' "$l2"
-printf '\n%s' "$l3"
+[ -n "$l3" ] && printf '\n%s' "$l3"
 exit 0
 

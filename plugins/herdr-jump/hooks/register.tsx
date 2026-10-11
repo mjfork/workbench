@@ -17,9 +17,8 @@ const claudeDir = async ($: EngineInterface) => {
 }
 
 const PANE = 'herdr-jump'
-// `/jump`, and `/ws`, its old name, kept as a hidden alias for muscle memory.
+// `/jump`: a picker, or straight to a pane, workspace or match.
 const JUMP = 'jump'
-const OLD_JUMP = 'ws'
 const QUEUE_PANE = 'herdr-queue'
 // `/needs-me` opens the queue pane, the same one the footer's ⚑ count opens, whether or not anyone is waiting.
 const QUEUE_COMMAND = 'needs-me'
@@ -202,14 +201,12 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     if ((await $.env.get('HERDR_ENV')) === '1') {
       current = await $.env.get('HERDR_WORKSPACE_ID')
-      for (const name of [JUMP, OLD_JUMP]) {
-        await $.command.register({
-          name,
-          description: 'Jump to a herdr pane: alone opens a picker (workspace › tab › pane); or give a pane ID (w8N:p2), a workspace ID or number, or words from its workspace, tab or title',
-          argumentHint: '[pane id | workspace | words]',
-          immediate: true,
-        })
-      }
+      await $.command.register({
+        name: JUMP,
+        description: 'Jump to a herdr pane: alone opens a picker (workspace › tab › pane); or give a pane ID (w8N:p2), a workspace ID or number, or words from its workspace, tab or title',
+        argumentHint: '[pane id | workspace | words]',
+        immediate: true,
+      })
       await $.command.register({
         name: QUEUE_COMMAND,
         description: 'Open the list of agents waiting on you: asks and dialogs, click one to go there',
@@ -383,9 +380,7 @@ export const register: Register = on => {
 
   // Answers go to a toast, never the transcript, so jumps cost the model nothing.
   // The old name still runs but stays out of the typeahead and /help.
-  on('command.describe', { command: OLD_JUMP }, async ($, e, next) => next({ ...e, isHidden: true }))
-
-  on('command.run', { command: [JUMP, OLD_JUMP] }, async ($, e) => {
+  on('command.run', { command: JUMP }, async ($, e) => {
     const listed = await listPanes($)
     if (typeof listed === 'string') {
       $.ui.toast(listed)

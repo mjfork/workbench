@@ -163,17 +163,6 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-test('/ws, the old name, still jumps and is hidden from the typeahead', async ($, on) => {
-  const seen = engine(on)
-  on('command.describe', (_$, e) => ({ description: e.description, isHidden: e.isHidden }) as never)
-  await $.command.run({ command: 'ws', args: 'w8n' } as CommandRunInput)
-  expect(seen.focused).toEqual([['workspace', 'w8N']])
-  const old = await $.command.describe({ command: 'ws', description: 'x', isHidden: false } as never)
-  expect((old as { isHidden: boolean }).isHidden).toBe(true)
-  const now = await $.command.describe({ command: 'jump', description: 'x', isHidden: false } as never)
-  expect((now as { isHidden: boolean }).isHidden).toBe(false)
-})
-
 // ---- /jump-back: herdr keeps no focus history, so the mod notes each change of the focused pane.
 const HISTORY = '/home/ubuntu/.claude/ctx/focus/default.json'
 const history = (seen: Seen) => JSON.parse(seen.files[HISTORY]!) as { current: string | null; previous: string | null }

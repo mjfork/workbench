@@ -29,7 +29,7 @@ const handoffAt = atom({ plugin: 'cache-timer', key: 'handoffAt' } as const, nul
 const handoff = atom({ plugin: 'cache-timer', key: 'handoff' } as const, null)
 
 // The TTL comes from the transcript (1 hour until it says); yellow is its last quarter. The one setting (userConfig):
-// handoffLeadMinutes (5; 0 = off): that long before the cache expires, with it still warm and on the long tier, the
+// handoffLeadMinutes (10; 0 = off): that long before the cache expires, with it still warm and on the long tier, the
 // model writes a handoff note to disk, and handoffMinTokens (200K; 0 = any size): a smaller context is not worth one.
 const params: CacheParams = paramsOf()
 let handoffLeadMs: number | null = null

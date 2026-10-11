@@ -4,7 +4,7 @@
 
 ## When it runs
 
-Once per idle stretch, `handoffLeadMinutes` before the cache expires (minute 55 on the 1-hour tier), `cache-timer` submits a prompt marked `[cache-timer handoff]`. It runs a real turn on the warm cache, the model replies with a handoff note, and the plugin saves the reply to `<config dir>/ctx/handoff/<session>.md`. The path stays above the prompt until the next turn starts.
+Once per idle stretch, `handoffLeadMinutes` before the cache expires (minute 50 on the 1-hour tier), `cache-timer` submits a prompt marked `[cache-timer handoff]`. It runs a real turn on the warm cache, the model replies with a handoff note, and the plugin saves the reply to `<config dir>/ctx/handoff/<session>.md`. The path stays above the prompt until the next turn starts.
 
 That turn re-warms the cache, so the expired-cache card appears about an hour after it, not at minute 60.
 

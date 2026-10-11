@@ -7,7 +7,7 @@ fail() { echo "FAIL: $1" >&2; echo "$out" >&2; exit 1; }
 plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 mkdir -p "$tmp/profile"
 echo '{"oauthAccount":{"emailAddress":"dev@example.com","organizationName":"Example Org"}}' > "$tmp/profile/.claude.json"
-in='{"workspace":{"current_dir":"'"$tmp"'/work/a/b/app","project_dir":"'"$tmp"'/work/a/b/app"},"model":{"display_name":"Opus"},"context_window":{"used_percentage":42.4,"total_input_tokens":424000,"context_window_size":1000000},"cost":{"total_cost_usd":3.456},"rate_limits":{"five_hour":{"used_percentage":12.2,"resets_at":1800000000},"seven_day":{"used_percentage":55.5,"resets_at":1800500000}}}'
+in='{"workspace":{"current_dir":"'"$tmp"'/work/alpha/beta/app","project_dir":"'"$tmp"'/work/alpha/beta/app"},"model":{"display_name":"Opus"},"context_window":{"used_percentage":42.4,"total_input_tokens":424000,"context_window_size":1000000},"cost":{"total_cost_usd":3.456},"rate_limits":{"five_hour":{"used_percentage":12.2,"resets_at":1800000000},"seven_day":{"used_percentage":55.5,"resets_at":1800500000}}}'
 
 out="$(echo "$in" | HOME="$tmp" CLAUDE_CONFIG_DIR="$tmp/profile" STATUSLINE_TZ=UTC bash "$here/statusline.sh" | plain)"
 [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 3 ] || fail "three lines"
@@ -16,10 +16,15 @@ grep -q 'ctx 42% (424k/1.0M)' <<<"$l1" || fail "context on line 1"
 grep -q '\[app\]' <<<"$l1" || fail "project on line 1"
 grep -q 'Opus' <<<"$l1" || fail "model on line 1"
 grep -q '/…/app' <<<"$l1" || fail "a deep directory shows its first and last parts"
-grep -q '\$3.46' <<<"$l2" || fail "cost on line 2"
 grep -q 'session 12% (resets .* UTC)' <<<"$l2" || fail "session usage in the chosen time zone"
 grep -q 'week 56%' <<<"$l2" || fail "week usage"
-grep -q 'dev@example.com · Example Org' <<<"$l3" || fail "login on line 3, read from CLAUDE_CONFIG_DIR"
+grep -q '^session .* · week .* · \$3.46$' <<<"$l2" || fail "line 2 is session, week, then cost"
+[ "$l3" = 'dev@example.com · Example Org' ] || fail "line 3 is the login alone, read from CLAUDE_CONFIG_DIR"
+
+# A directory of 20 characters or fewer is shown whole.
+short='{"workspace":{"current_dir":"/srv/a/b/c","project_dir":"/srv/a/b/c"}}'
+out="$(echo "$short" | HOME="$tmp" CLAUDE_CONFIG_DIR="$tmp/profile" bash "$here/statusline.sh" | plain)"
+grep -q '^/srv/a/b/c \[c\]' <<<"$out" || fail "a short directory is shown whole"
 
 # With no profile set, the login is read from $HOME/.claude.json.
 cp "$tmp/profile/.claude.json" "$tmp/.claude.json"
