@@ -24,10 +24,18 @@ const QUEUE_PANE = 'herdr-queue'
 const QUEUE_COMMAND = 'needs-me'
 // `/needs-me-next` goes to the first pane in that list that is not this one.
 const NEXT_COMMAND = 'needs-me-next'
-// `/jump-back` goes to the pane you were in before this one. herdr keeps no focus history, so every session's mod
-// watches which pane is focused and keeps the last two in a file all of them share.
+// `/jump-back` goes to the pane you were in before this one. herdr keeps no focus history, so the sessions' mods
+// watch which pane is focused and keep the last two in a file all of them share. One session does the watching: it holds
+// a lease it renews on each poll, and another takes over once the lease is FOCUS_LEASE_MS old.
 const BACK_COMMAND = 'jump-back'
 const FOCUS_POLL_MS = 2000
+const FOCUS_LEASE_MS = 5000
+// The queue: every footer polls it, but the script keeps one list for all of them (in .list-cache, under
+// QUEUE_FRESH_MS old; the same age as the script's own check). A footer reads that file itself, and starts the script
+// only when the file is stale or missing. A turn's stop or a prompt drops the file, so a new ask shows at the next poll;
+// the age bounds only how late a pane blocked on a dialog shows.
+const QUEUE_POLL_MS = 5000
+const QUEUE_FRESH_MS = 15_000
 /** The script that keeps the needs-you queue (`list`, `clear <pane>`, and the `stop` and `prompt` hook actions), shipped in this plugin's bin/. */
 const needsYou = ($: EngineInterface) => `${$.plugin.root}/bin/needs-you.sh`
 const query = atom({ plugin: 'herdr-jump', key: 'query' } as const, '')
@@ -56,6 +64,7 @@ async function focusedPaneId($: EngineInterface): Promise<string | null> {
 }
 
 const focusFile = async ($: EngineInterface) => `${await claudeDir($)}/ctx/focus/${(await $.env.get('HERDR_SESSION')) ?? 'default'}.json`
+const leaseFile = async ($: EngineInterface) => `${await claudeDir($)}/ctx/focus/${(await $.env.get('HERDR_SESSION')) ?? 'default'}.poller.json`
 
 async function readFocus($: EngineInterface): Promise<FocusHistory> {
   try {
@@ -124,6 +133,25 @@ async function focusRow($: EngineInterface, row: PaneRow): Promise<void> {
 }
 
 /**
+ * The timer's poll: only the session holding the lease asks herdr. It takes the lease when it is free, its own, or stale
+ * (its holder has gone); two sessions that take it at once both poll for a moment, which does no harm.
+ */
+async function pollFocus($: EngineInterface): Promise<void> {
+  const ms = await $.clock.now()
+  const path = await leaseFile($)
+  let lease: { pane?: unknown; at?: unknown } | null = null
+  try {
+    lease = JSON.parse(String(await $.fs.read(path))) as { pane?: unknown; at?: unknown }
+  } catch {
+    lease = null
+  }
+  const isHeld = lease !== null && lease.pane !== pane && typeof lease.at === 'number' && ms - lease.at < FOCUS_LEASE_MS
+  if (isHeld) return
+  await $.fs.write(path, JSON.stringify({ pane, at: ms }) + '\n').catch(() => {})
+  await trackFocus($)
+}
+
+/**
  * The queue's two writers are a Stop hook and a UserPromptSubmit hook in the script's original setup. This plugin hands
  * the script the same JSON instead, so no hook settings are needed. Outside herdr the script does nothing; it runs in
  * the session's directory. Not awaited: a slow herdr must not hold a turn.
@@ -133,11 +161,28 @@ function feedQueue($: EngineInterface, action: 'stop' | 'prompt', input: Record<
   void $.process.run(['bash', needsYou($), action], { stdin: JSON.stringify(input), timeoutMs: 20_000 }).catch(() => {})
 }
 
-async function refreshQueue($: EngineInterface): Promise<void> {
-  const listed = await $.process.run(['bash', needsYou($), 'list'])
-  if (listed.exitCode !== 0) return
+/** The script's shared list, when it is fresh enough to use as is; null when stale, missing or unreadable. */
+async function cachedQueue($: EngineInterface): Promise<unknown[] | null> {
+  try {
+    const path = `${await $.env.get('HOME')}/.herdr-queue/${(await $.env.get('HERDR_SESSION')) ?? 'default'}/.list-cache`
+    const stat = await $.fs.stat(path)
+    if ((await $.clock.now()) - stat.mtimeMs >= QUEUE_FRESH_MS) return null
+    const parsed: unknown = JSON.parse(String(await $.fs.read(path)))
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/** Refreshes the queue: from the shared list when it is fresh (the timer's poll), else from the script (`isForced`: always). */
+async function refreshQueue($: EngineInterface, isForced = true): Promise<void> {
+  let parsed: unknown = isForced ? null : await cachedQueue($)
+  if (parsed === null) {
+    const listed = await $.process.run(['bash', needsYou($), 'list'])
+    if (listed.exitCode !== 0) return
+    parsed = JSON.parse(listed.stdout)
+  }
   // Each ask is another session's reply: drawn as text, never as terminal codes.
-  const parsed: unknown = JSON.parse(listed.stdout)
   const items: QueueItem[] = (Array.isArray(parsed) ? (parsed as QueueItem[]) : []).map(i => ({
     ...i,
     pane: plainText(i.pane),
@@ -222,12 +267,11 @@ export const register: Register = on => {
         description: 'Go back to the herdr pane you were in before this one',
         immediate: true,
       })
-      void trackFocus($).catch(() => {})
-      $.clock.every(FOCUS_POLL_MS, () => void trackFocus($).catch(() => {}))
-      void refreshQueue($)
-      $.clock.every(5000, () => void refreshQueue($))
-
       pane = (await $.env.get('HERDR_PANE_ID')) ?? null
+      void pollFocus($).catch(() => {})
+      $.clock.every(FOCUS_POLL_MS, () => void pollFocus($).catch(() => {}))
+      void refreshQueue($, false).catch(() => {})
+      $.clock.every(QUEUE_POLL_MS, () => void refreshQueue($, false).catch(() => {}))
     }
 
     return next(e)

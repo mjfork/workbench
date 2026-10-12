@@ -124,9 +124,11 @@ clear)
   drop_cache
   ;;
 list)
-  # Every session's footer polls this; serve a cached answer under 4s old.
+  # Every session's footer polls this; serve a cached answer under 15s old. A stop or prompt drops the cache, so a new
+  # ask shows at the next poll; the age bounds how late a dialog-blocked pane shows. (The mod reads this cache itself
+  # while it is that fresh, and runs this only when it is not: keep the two ages the same, QUEUE_FRESH_MS in register.tsx.)
   cache="$dir/.list-cache"
-  if [ -f "$cache" ] && [ $(( $(date +%s) - $(mtime "$cache") )) -lt 4 ]; then cat "$cache"; exit 0; fi
+  if [ -f "$cache" ] && [ $(( $(date +%s) - $(mtime "$cache") )) -lt 15 ]; then cat "$cache"; exit 0; fi
   agents=$("$herdr" agent list 2>/dev/null | jq -c '.result.agents // empty' 2>/dev/null)
   spaces=$("$herdr" workspace list 2>/dev/null | jq -c '[.result.workspaces[] | {key: .workspace_id, value: .label}] | from_entries' 2>/dev/null)
   [ -n "$spaces" ] || spaces='{}'
