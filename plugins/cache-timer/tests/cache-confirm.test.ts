@@ -11,7 +11,8 @@ test('an expired cache holds the prompt and asks; "Submit anyway" sends it', asy
   const r = await $.prompt.submit(COMPOSER('fix the bug'))
   expect((r as { drop?: string }).drop).toBeDefined()
   expect(seen.submits).toEqual([])
-  expect(seen.fills).toEqual(['fix the bug'])
+  // The engine puts the dropped prompt back in the box; the plugin does not fill it a second time.
+  expect(seen.fills).toEqual([])
 
   const pane = await $.ui.mount({ plugin: 'cache-timer', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   expect(await pane.find({ text: /Prompt cache expired 1m ago \(5-minute TTL\)/ })).toBeDefined()

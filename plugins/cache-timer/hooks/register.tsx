@@ -304,10 +304,10 @@ export const register: Register = (on, options) => {
     if (isMachinePrompt(e.origin.kind, e.text) || !(await isFocused($))) return next(e)
     if ((e.attachments?.length ?? 0) > 0) return next(e)
 
-    // A person typed it: hold it and ask.
+    // A person typed it: hold it and ask. The engine puts a dropped prompt back in the box itself; filling it here too
+    // left it there twice.
     await update($, clockMs, () => ms)
     await update($, held, () => e.text)
-    await $.prompt.fill({ text: e.text, mode: 'replace' } as never)
     return { drop: 'prompt cache expired: confirm' }
   })
 

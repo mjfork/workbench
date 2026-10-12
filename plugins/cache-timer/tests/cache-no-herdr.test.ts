@@ -24,5 +24,5 @@ test('outside herdr an expired cache still holds the prompt and asks', async ($,
   expect((held as { drop?: string }).drop).toBeDefined()
   const pane = await $.ui.mount({ plugin: 'cache-timer', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   expect(await pane.find({ key: 'cache-send' })).toBeDefined()
-  expect(seen.fills.at(-1)).toBe('fix the bug')
+  expect(seen.fills).toEqual([])
 })
