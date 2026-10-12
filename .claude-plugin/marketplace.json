@@ -37,7 +37,7 @@
     },
     {
       "name": "cache-timer",
-      "description": "Footer countdown of the main prompt cache (yellow near expiry, red once expired); a confirm card before a prompt re-sends an expired cache at full price; optionally writes a handoff note to disk shortly before the cache expires, so a new session can resume from it; writes each pane's cache state for cache-state.sh",
+      "description": "Footer countdown of the main prompt cache (yellow near expiry, red once expired); a confirm card before a prompt re-sends an expired cache at full price; writes a handoff note shortly before the cache expires, so a new session can resume from it; writes each pane's cache state for cache-state.sh",
       "source": "./plugins/cache-timer",
       "category": "productivity"
     }

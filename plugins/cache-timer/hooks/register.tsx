@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { CACHE_COLOR, cacheLabel, cacheState, cardLines, handoffDue, handoffFile, handoffLeadMsOf, handoffMinTokensOf, isWorthHandoff, previewOf, resumePrompt, HANDOFF_MARK, HANDOFF_TURN_PROMPT, isMachinePrompt, isNoHandoff, lastResponse, paramsOf, redact, withTtl } from './cache'
+import { CACHE_COLOR, cacheLabel, cacheState, cardLines, handoffDue, handoffInTranscript, handoffLeadMsOf, handoffMinTokensOf, handoffNote, isWorthHandoff, previewOf, resumePrompt, HANDOFF_MARK, HANDOFF_TURN_PROMPT, isMachinePrompt, isNoHandoff, lastResponse, paramsOf, redact, withTtl } from './cache'
 import type { CacheParams } from './cache'
 import type { Handoff } from '../types'
 
@@ -24,36 +24,54 @@ const held = atom({ plugin: 'cache-timer', key: 'held' } as const, null)
 // The TTL the last main response's cache was written with, from the transcript.
 const cacheTtl = atom({ plugin: 'cache-timer', key: 'cacheTtl' } as const, null)
 // The handoff: when this idle stretch's was tried (null: not yet; it is tried once, then not again until the
-// next turn), and the one on disk (null: none, or the conversation has moved on since).
+// next turn), and the note it wrote (null: none, or the conversation has moved on since).
 const handoffAt = atom({ plugin: 'cache-timer', key: 'handoffAt' } as const, null)
 const handoff = atom({ plugin: 'cache-timer', key: 'handoff' } as const, null)
 
 // The TTL comes from the transcript (1 hour until it says); yellow is its last quarter. The one setting (userConfig):
 // handoffLeadMinutes (10; 0 = off): that long before the cache expires, with it still warm and on the long tier, the
-// model writes a handoff note to disk, and handoffMinTokens (200K; 0 = any size): a smaller context is not worth one.
+// model writes a handoff note, which the plugin keeps for a new session, and handoffMinTokens (200K; 0 = any size): a
+// smaller context is not worth one.
 const params: CacheParams = paramsOf()
 let handoffLeadMs: number | null = null
 let handoffMinTokens = handoffMinTokensOf(undefined)
+// A pane's state file not written for this long belongs to a pane that is gone.
+const STATE_KEEP_DAYS = 7
+const DAY_MS = 24 * 60 * 60_000
 // The handoff turn, told from a person's by its prompt's mark: submitted but not started, then its turn id; and
 // when it was triggered and how old the cache was.
 let isHandoffPending = false
 let handoffTurnId: string | null = null
-let handoffTrigger: { ms: number; lastAt: number } | null = null
+let handoffTrigger: { at: number; ageMin: number | null } | null = null
 // This pane's herdr ID when there is one: other sessions look the state file up by it (cache-state.sh).
 let pane: string | null = null
 
-/** The transcript's last main response: its time and its cache's TTL. */
-async function readTranscript($: EngineInterface) {
+/** The transcript's tail; empty when there is none yet. */
+async function readTail($: EngineInterface): Promise<string> {
   const id = await $.session.id()
   const tail = await $.process.run(['bash', '-c', 'f=$(ls "$1"/projects/*/"$2".jsonl 2>/dev/null | head -1); [ -n "$f" ] && tail -c 400000 "$f"', '_', await claudeDir($), id], { timeoutMs: 5000 })
-  return tail.exitCode === 0 ? lastResponse(tail.stdout) : { at: null, ttlMs: null }
+  return tail.exitCode === 0 ? tail.stdout : ''
 }
 
-/** A resumed session's clock starts from its transcript's last response. */
+/** The transcript's last main response: its time and its cache's TTL. */
+async function readTranscript($: EngineInterface) {
+  return lastResponse(await readTail($))
+}
+
+/**
+ * A resumed session's clock starts from its transcript's last response, and a handoff its conversation ended on is
+ * offered again (the plugin keeps the note only while it runs; after a restart the transcript has it).
+ */
 async function seedCache($: EngineInterface): Promise<void> {
-  const last = await readTranscript($)
+  const tail = await readTail($)
+  const last = lastResponse(tail)
   await update($, cacheAt, () => last.at)
   await update($, cacheTtl, () => last.ttlMs)
+  if ((await read($, handoff)) !== null) return
+  const found = handoffInTranscript(tail)
+  if (found === null) return
+  await update($, handoffAt, () => found.at ?? last.at)
+  await keepHandoff($, { at: found.at ?? last.at ?? (await $.clock.now()), ageMin: found.ageMin }, found.body)
 }
 
 /** After a turn: the TTL its responses wrote with (kept when the tail names none). */
@@ -69,10 +87,10 @@ async function paramsNow($: EngineInterface): Promise<CacheParams> {
 }
 
 /** Writes this pane's cache state; best effort. */
-/** The handoff as the state file records it: where the note is, not what it says. */
+/** The handoff as the state file records it: that there is one, not what it says. */
 async function handoffForState($: EngineInterface) {
   const note = await read($, handoff)
-  return note === null ? null : { path: note.path, at: note.at, ageMin: note.ageMin, tokens: note.tokens }
+  return note === null ? null : { at: note.at, ageMin: note.ageMin, tokens: note.tokens }
 }
 
 async function writeState($: EngineInterface): Promise<void> {
@@ -114,7 +132,7 @@ async function gitFacts($: EngineInterface, cwd: string): Promise<string | null>
 /**
  * Once per idle stretch, `handoffLeadMinutes` before the cache would expire, while it is still warm (and on the long
  * tier), the plugin submits a prompt, which runs a real turn on the warm cache; the model writes a handoff note from the
- * context it already holds, and that turn's reply is saved. The turn restarts the cache's clock like any other. Tried once
+ * context it already holds, and that turn's reply is kept. The turn restarts the cache's clock like any other. Tried once
  * per stretch; the next turn a person starts re-arms it.
  */
 async function maybeHandoff($: EngineInterface, ms: number): Promise<void> {
@@ -125,39 +143,27 @@ async function maybeHandoff($: EngineInterface, ms: number): Promise<void> {
   await update($, handoffAt, () => ms)
   if (!isWorthHandoff((await $.session.usage()).context.tokens, handoffMinTokens)) return
   isHandoffPending = true
-  handoffTrigger = { ms, lastAt: lastAt ?? ms }
+  handoffTrigger = { at: ms, ageMin: Math.round((ms - (lastAt ?? ms)) / 60_000) }
   await $.prompt.submit({ text: HANDOFF_TURN_PROMPT } as never).catch(err => {
     isHandoffPending = false
     $.ui.log(`handoff not written: ${String(err).slice(0, 120)}`)
   })
 }
 
-/** Writes the note to <config dir>/ctx/handoff/<session>.md, under a header of what the mod knows. */
-async function saveHandoff($: EngineInterface, trigger: { ms: number; lastAt: number }, body: string): Promise<void> {
-  const session = await $.session.id()
+/** Keeps the note for a new session, under a header of what the mod knows, with escape codes and secrets taken out. */
+async function keepHandoff($: EngineInterface, trigger: { at: number; ageMin: number | null }, body: string): Promise<void> {
   const cwd = await $.session.cwd()
-  const dir = `${await claudeDir($)}/ctx/handoff`
-  const path = `${dir}/${session}.md`
-  const ageMin = Math.round((trigger.ms - trigger.lastAt) / 60_000)
   const masked = redact(body)
-  const text = handoffFile({ session, cwd, at: new Date(trigger.ms).toISOString(), ageMin, git: await gitFacts($, cwd), body: masked })
-  // Readable by this user only: redaction is best effort, so the file is treated as sensitive. The folder is made private
-  // before the note goes into it, so the note is never open to others, not even before its own chmod. A chmod that runs
-  // and fails stops the save; one that cannot run at all (Windows, which has none) is passed over.
-  const run = (argv: string[]) => $.process.run(argv, { timeoutMs: 5000 }).catch(() => null)
-  await run(['mkdir', '-p', '-m', '700', dir])
-  const locked = await run(['chmod', '700', dir])
-  if (locked !== null && locked.exitCode !== 0) throw new Error(`could not make ${dir} private: ${locked.stderr.trim().slice(0, 120)}`)
-  await $.fs.write(path, text)
-  await run(['chmod', '600', path])
-  await update($, handoff, () => ({ path, at: trigger.ms, ageMin, tokens: Math.round(text.length * 0.27), preview: previewOf(masked) }))
+  const text = handoffNote({ session: await $.session.id(), cwd, at: new Date(trigger.at).toISOString(), ageMin: trigger.ageMin, git: await gitFacts($, cwd), body: masked })
+  await update($, handoff, () => ({ text, at: trigger.at, ageMin: trigger.ageMin, tokens: Math.round(text.length * 0.27), preview: previewOf(masked) }))
   await writeState($)
 }
 
 /**
- * Settles the prompt the card is holding. `send` submits it; `handoff` clears the conversation and submits it with a pointer
- * to the handoff note; `clear` starts a new session and leaves it in the box; `cancel` puts it back in the box. What is
- * submitted is the person's own words (`asUser`: the transcript still names this plugin), so it answers a pending ask.
+ * Settles the prompt the card is holding. `send` submits it (its turn drops the note); `handoff` clears the conversation
+ * and submits the handoff note with it; `clear` starts a new session and leaves it in the box; `cancel` puts
+ * it back in the box. What is submitted is the person's own words (`asUser`: the transcript still names this plugin), so it
+ * answers a pending ask.
  */
 async function settleHeld($: EngineInterface, choice: 'send' | 'clear' | 'handoff' | 'cancel'): Promise<void> {
   const text = await read($, held)
@@ -172,11 +178,19 @@ async function settleHeld($: EngineInterface, choice: 'send' | 'clear' | 'handof
   if (choice === 'handoff' && note !== null) {
     await $.prompt.fill({ text: '', mode: 'replace' } as never)
     await $.command.run({ command: 'clear', args: '' } as never)
-    await $.prompt.submit({ text: resumePrompt(note.path, text), asUser: true } as never)
+    await $.prompt.submit({ text: resumePrompt(note.text, text), asUser: true } as never)
     return
   }
   if (choice === 'clear') await $.command.run({ command: 'clear', args: '' } as never)
   await $.prompt.fill({ text, mode: 'replace' } as never)
+}
+
+/** Deletes the state files of panes not written for STATE_KEEP_DAYS; best effort. (The engine's `$.fs` has no delete.) */
+async function pruneStates($: EngineInterface, now: number): Promise<void> {
+  const dir = `${await claudeDir($)}/ctx/cache`
+  const entries = await $.fs.list(dir).catch(() => [])
+  const old = entries.filter(f => f.kind === 'file' && f.name.endsWith('.json') && now - f.mtimeMs > STATE_KEEP_DAYS * DAY_MS)
+  if (old.length > 0) await $.process.run(['rm', '-f', '--', ...old.map(f => `${dir}/${f.name}`)], { timeoutMs: 5000 }).catch(() => null)
 }
 
 /** Whether the person has this pane focused in herdr: a prompt typed there is theirs. Unknown reads as theirs. */
@@ -201,16 +215,18 @@ export const register: Register = (on, options) => {
     await update($, isWorking, () => false)
     await seedCache($).catch(() => {})
     await writeState($)
+    // The state files of panes that are gone, after this pane's own is fresh.
+    await pruneStates($, await $.clock.now())
     await tick($)
     $.clock.every(15_000, () => void tick($).catch(() => {}))
 
     return next(e)
   })
 
-  // The handoff turn only answers: the plugin saves the reply. The prompt asks for no tools; this holds it to that, even in a
+  // The handoff turn only answers: the plugin keeps the reply. The prompt asks for no tools; this holds it to that, even in a
   // permissive permission mode with nobody there.
   on('tool.call', async ($, e, next) => {
-    if (handoffTurnId !== null) return { deny: 'cache-timer: this turn only writes the handoff note, which the plugin saves; it uses no tools.' }
+    if (handoffTurnId !== null) return { deny: 'cache-timer: this turn only writes the handoff note, which the plugin keeps; it uses no tools.' }
     return next(e)
   })
 
@@ -241,7 +257,7 @@ export const register: Register = (on, options) => {
       handoffTurnId = null
       if (!e.isAborted && isNoHandoff(e.answer)) $.ui.log('no handoff written: nothing in this session worth resuming')
       else if (!e.isAborted && e.answer.trim() !== '' && handoffTrigger !== null) {
-        await saveHandoff($, handoffTrigger, e.answer).catch(err => $.ui.log(`handoff not saved: ${String(err).slice(0, 160)}`))
+        await keepHandoff($, handoffTrigger, e.answer).catch(err => $.ui.log(`handoff not kept: ${String(err).slice(0, 160)}`))
       }
     }
     await writeState($)
@@ -303,13 +319,13 @@ export const register: Register = (on, options) => {
     const theirs = await next(e)
     if (e.props.hasSurvey) return theirs
     const { Box, Text, Button } = $.ui.resolve(e)
-    // A handoff written while the person was away stays on screen, with its path, until the conversation moves on.
+    // A handoff written while the person was away is noted on screen until the conversation moves on.
     if ((await read($, held)) === null) {
-      const saved = await read($, handoff)
-      if (saved === null) return theirs
+      const kept = await read($, handoff)
+      if (kept === null) return theirs
       return (
         <Box flexDirection="column">
-          <Text key="handoff-saved" dimColor>handoff saved: {saved.path}</Text>
+          <Text key="handoff-ready" dimColor>handoff ready: "Resume from handoff" is offered when the cache expires</Text>
           {theirs}
         </Box>
       )
@@ -319,7 +335,7 @@ export const register: Register = (on, options) => {
     const left = at === null ? 0 : cacheState(at, await read($, clockMs), now).leftMs
     const tokens = (await $.session.usage()).context.tokens
     const note = await read($, handoff)
-    const lines = cardLines(left, tokens, await $.session.model(), now.ttlMs, note === null ? null : { ageMin: note.ageMin, tokens: note.tokens, path: note.path, preview: note.preview })
+    const lines = cardLines(left, tokens, await $.session.model(), now.ttlMs, note === null ? null : { ageMin: note.ageMin, tokens: note.tokens, preview: note.preview })
     return (
       <Box flexDirection="column">
         <Box key="cache-card" flexDirection="column" borderStyle="round" borderColor="red" paddingX={1} width={Math.min(e.props.bodyColumns, 100)}>
@@ -328,7 +344,7 @@ export const register: Register = (on, options) => {
           ))}
           <Box gap={2}>
             <Button key="cache-send" label="Submit anyway" variant={note === null ? 'primary' : undefined} onPress={() => void settleHeld($, 'send')} />
-            {/* Always three choices: the middle one is the resume when a note is on disk, else a plain new session. */}
+            {/* Always three choices: the middle one is the resume when a note is kept, else a plain new session. */}
             {note !== null
               ? <Button key="cache-handoff" label="Resume from handoff" variant="primary" onPress={() => void settleHeld($, 'handoff')} />
               : <Button key="cache-clear" label="New session (/clear)" onPress={() => void settleHeld($, 'clear')} />}

@@ -9,7 +9,7 @@ export const TAIL_5M = JSON.stringify({ type: 'assistant', timestamp: new Date(0
 export type Seen = { logs: string[]; toasts: string[]; fills: string[]; submits: string[]; commands: string[]; opened: string[]; closed: string[]; files: Record<string, string>; compacts: number; runs: string[][]; events: string[]; stdins: (string | undefined)[] }
 
 /** Stands in for the engine; the transcript tail is empty unless given. */
-export function engine(on: On, opts: { env?: Record<string, string>; tail?: string; cwd?: string; focused?: boolean; tokens?: number; chmodFails?: boolean } = {}) {
+export function engine(on: On, opts: { env?: Record<string, string>; tail?: string; cwd?: string; focused?: boolean; tokens?: number; dirs?: Record<string, { name: string; mtimeMs: number }[]> } = {}) {
   const seen: Seen = { logs: [], toasts: [], fills: [], submits: [], commands: [], opened: [], closed: [], files: {}, compacts: 0, runs: [], events: [], stdins: [] }
   const clock = mock.clock(on)
   const env = opts.env ?? { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
@@ -18,7 +18,6 @@ export function engine(on: On, opts: { env?: Record<string, string>; tail?: stri
     seen.runs.push([...e.argv])
     seen.events.push(`run ${e.argv.join(' ')}`)
     seen.stdins.push((e as { init?: { stdin?: string } }).init?.stdin)
-    if (opts.chmodFails && e.argv[0] === 'chmod') return { value: { exitCode: 1, stdout: '', stderr: 'Operation not permitted', isStdoutTruncated: false, isStderrTruncated: false } }
     if (e.argv[0] === 'git') {
       const out = e.argv.includes('--abbrev-ref') ? 'feat/x' : e.argv.includes('--short') ? 'abc1234' : ' M a.ts\n M b.ts\n'
       return { value: { exitCode: 0, stdout: out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
@@ -28,6 +27,8 @@ export function engine(on: On, opts: { env?: Record<string, string>; tail?: stri
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('fs.exists', (_$, e) => ({ value: e.path in seen.files }))
+  // A folder's files, as given; any other folder is empty.
+  on('fs.list', (_$, e) => ({ value: (opts.dirs?.[e.path] ?? []).map(f => ({ ...f, kind: 'file', size: 1, isLink: false })) }) as never)
   on('session.id', () => ({ value: 's1' }))
   on('ui.log', (_$, e) => {
     seen.logs.push(e.text)
