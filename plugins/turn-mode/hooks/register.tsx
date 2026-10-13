@@ -27,6 +27,19 @@ const LABEL = { async: 'async', realtime: 'real-time', agentic: 'agentic' } as c
 let pane: string | null = null
 let isActive = false
 
+// Asleep until input: an idle session runs no timer, so the OS can leave its memory
+// swapped out. A keystroke (prompt.edit, the nearest thing to focus Claude Code
+// shows), a prompt, a turn, a tool, a slash command or a click wakes it: one read
+// at once, then the 3s poll. The poll stops after IDLE_MS with no wake. While
+// asleep the footer shows the last mode read; a prompt still reads its own.
+const POLL_MS = 3000
+const IDLE_MS = 10 * 60_000
+let isAwake = false
+// A wake only marks activity; the next poll stamps it, so a keystroke costs nothing.
+let sawActivity = false
+let lastActivity = 0
+let poll: { cancel: () => void } | null = null
+
 /** This pane's mode, read fresh for each prompt (a toggle takes effect on the next one). */
 /** This pane's mode: its file when one is set, else async. */
 async function modeNow($: EngineInterface) {
@@ -39,9 +52,34 @@ async function refreshShown($: EngineInterface) {
   await update($, shown, () => mode)
 }
 
+/** One poll: stamp any activity since the last, or sleep once idle too long. */
+async function tick($: EngineInterface) {
+  const now = await $.clock.now()
+  if (sawActivity) {
+    sawActivity = false
+    lastActivity = now
+  } else if (now - lastActivity > IDLE_MS) {
+    poll?.cancel()
+    poll = null
+    isAwake = false
+    return
+  }
+  await refreshShown($).catch(() => {})
+}
+
+/** Input seen: awake already, the idle deadline moves; asleep, read the mode now and poll again. */
+async function wake($: EngineInterface) {
+  sawActivity = true
+  if (isAwake || pane === null) return
+  isAwake = true
+  poll = $.clock.every(POLL_MS, () => void tick($).catch(() => {}))
+  await refreshShown($).catch(() => {})
+}
+
 /** A click: async and real-time swap; agentic (a driver's) goes back to async. */
 async function toggle($: EngineInterface) {
   if (pane === null) return
+  await wake($)
   const mode = nextMode(await read($, shown))
   const file = { pane, mode, driver: null, setBy: 'human', at: await $.clock.now() }
   await $.fs.write(`${await claudeDir($)}/${MODE_REL}/${pane}.json`, JSON.stringify(file) + '\n')
@@ -55,15 +93,14 @@ export const register: Register = on => {
     isActive = true
     // A new conversation (start, /clear, resume) has not been told yet.
     await update($, injected, () => null)
-    if (pane !== null) {
-      await refreshShown($).catch(() => {})
-      $.clock.every(3000, () => void refreshShown($).catch(() => {}))
-    }
+    // One read for the footer, then asleep until input.
+    if (pane !== null) await refreshShown($).catch(() => {})
 
     return result
   })
 
   on('prompt.submit', async ($, e, next) => {
+    void wake($).catch(() => {})
     if (!isActive || e.text.trimStart().startsWith('/')) return next(e)
     const { mode, driver } = await modeNow($)
     const key = keyOf(mode, driver, isPeerOrigin(e.origin.kind))
@@ -72,6 +109,28 @@ export const register: Register = on => {
     const result = await next({ ...e, context: [...(e.context ?? []), textFor(key)] })
     if (result.drop === undefined) await update($, injected, () => key)
     return result
+  })
+
+  // The first keystroke wakes it: passed through as typed, the wake not awaited.
+  on('prompt.edit', ($, e, next) => {
+    void wake($).catch(() => {})
+    return next(e)
+  })
+  on('turn.start', ($, e, next) => {
+    void wake($).catch(() => {})
+    return next(e)
+  })
+  on('turn.complete', ($, e, next) => {
+    void wake($).catch(() => {})
+    return next(e)
+  })
+  on('tool.call', ($, e, next) => {
+    void wake($).catch(() => {})
+    return next(e)
+  })
+  on('command.run', ($, e, next) => {
+    void wake($).catch(() => {})
+    return next(e)
   })
 
   // A compacted conversation keeps only its summary: say it again on the next prompt.
