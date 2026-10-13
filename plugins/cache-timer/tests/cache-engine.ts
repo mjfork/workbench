@@ -9,10 +9,15 @@ export const TAIL_5M = JSON.stringify({ type: 'assistant', timestamp: new Date(0
 export type Seen = { logs: string[]; toasts: string[]; fills: string[]; submits: string[]; commands: string[]; opened: string[]; closed: string[]; files: Record<string, string>; compacts: number; runs: string[][]; events: string[]; stdins: (string | undefined)[] }
 
 /** Stands in for the engine; the transcript tail is empty unless given. */
-export function engine(on: On, opts: { env?: Record<string, string>; tail?: string; cwd?: string; focused?: boolean; tokens?: number; dirs?: Record<string, { name: string; mtimeMs: number }[]> } = {}) {
+// The transcript sits in the config folder's projects/<project>/<session id>.jsonl, found by the glob; `transcript` moves it
+// (null: gone), `session.id` changes the session's id.
+export function engine(on: On, opts: { env?: Record<string, string>; tail?: string; cwd?: string; focused?: boolean; tokens?: number; dirs?: Record<string, { name: string; mtimeMs: number }[]>; session?: { id: string }; transcript?: { path: string | null } } = {}) {
   const seen: Seen = { logs: [], toasts: [], fills: [], submits: [], commands: [], opened: [], closed: [], files: {}, compacts: 0, runs: [], events: [], stdins: [] }
   const clock = mock.clock(on)
   const env = opts.env ?? { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
+  const session = opts.session ?? { id: 's1' }
+  // Where the transcript is: none until a tail is given.
+  const transcriptAt = () => opts.transcript !== undefined ? opts.transcript.path : opts.tail === undefined ? null : `${env.CLAUDE_CONFIG_DIR ?? `${env.HOME}/.claude`}/projects/-home-ubuntu-projects-x/${session.id}.jsonl`
   on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('process.run', (_$, e) => {
     seen.runs.push([...e.argv])
@@ -23,13 +28,34 @@ export function engine(on: On, opts: { env?: Record<string, string>; tail?: stri
       return { value: { exitCode: 0, stdout: out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     const isAgentGet = e.argv[0] === 'herdr' && e.argv[1] === 'agent' && e.argv[2] === 'get'
-    const stdout = e.argv[0] === 'bash' && e.argv[1] === '-c' ? (opts.tail ?? '') : isAgentGet ? JSON.stringify({ result: { agent: { focused: opts.focused ?? true } } }) : '[]'
+    // The glob: the transcript's path when it is under the folder it searches, for this id.
+    if (e.argv[0] === 'bash' && e.argv[1] === '-c') {
+      const at = transcriptAt()
+      const found = at !== null && at.startsWith(`${e.argv[4]}/projects/`) && at.endsWith(`/${e.argv[5]}.jsonl`)
+      return { value: { exitCode: 0, stdout: found ? `${at}\n` : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
+    if (e.argv[0] === 'tail') {
+      const isThere = e.argv.at(-1) === transcriptAt()
+      return { value: { exitCode: isThere ? 0 : 1, stdout: isThere ? (opts.tail ?? '').slice(-Number(e.argv[2])) : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
+    const stdout = isAgentGet ? JSON.stringify({ result: { agent: { focused: opts.focused ?? true } } }) : '[]'
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('fs.exists', (_$, e) => ({ value: e.path in seen.files }))
+  // The transcript, the one file read here; anything else is missing.
+  on('fs.stat', (_$, e) => {
+    seen.events.push(`stat ${e.path}`)
+    if (e.path !== transcriptAt()) throw Object.assign(new Error(`ENOENT: ${e.path}`), { code: 'ENOENT' })
+    return { value: { kind: 'file', size: new TextEncoder().encode(opts.tail ?? '').length, mtimeMs: 0, isLink: false } } as never
+  })
+  on('fs.read', (_$, e) => {
+    seen.events.push(`read ${e.path}`)
+    if (e.path !== transcriptAt()) throw Object.assign(new Error(`ENOENT: ${e.path}`), { code: 'ENOENT' })
+    return { value: opts.tail ?? '' } as never
+  })
   // A folder's files, as given; any other folder is empty.
   on('fs.list', (_$, e) => ({ value: (opts.dirs?.[e.path] ?? []).map(f => ({ ...f, kind: 'file', size: 1, isLink: false })) }) as never)
-  on('session.id', () => ({ value: 's1' }))
+  on('session.id', () => ({ value: session.id }))
   on('ui.log', (_$, e) => {
     seen.logs.push(e.text)
     return { value: undefined } as never
@@ -44,6 +70,9 @@ export function engine(on: On, opts: { env?: Record<string, string>; tail?: stri
   on('session.usage', () => ({ value: { startedAt: 0, context: { tokens: opts.tokens ?? 180_000, window: 1_000_000 }, rateLimits: [] } }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('command.register', () => ({ value: undefined }) as never)
+  // No settings hook beneath the classic events.
+  on('classic.SessionStart', () => ({}) as never)
+  on('classic.Stop', () => ({}) as never)
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   // Stands for what the other mods draw in the band.
