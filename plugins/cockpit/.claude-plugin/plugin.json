@@ -1,7 +1,7 @@
 {
   "name": "cockpit",
-  "version": "1.0.0",
-  "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer. Four of them need herdr; cache-timer does not. Has no code of its own.",
+  "version": "1.1.0",
+  "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer, plus the herdr-worker-tabs skill (workers start in their own tab, not a split). Four of the plugins need herdr; cache-timer does not.",
   "author": {
     "name": "Michael Fork"
   },
