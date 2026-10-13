@@ -168,6 +168,28 @@ function feedQueue($: EngineInterface, action: 'stop' | 'prompt', input: Record<
 const queueFile = async ($: EngineInterface, name: string) =>
   `${await $.env.get('HOME')}/.herdr-queue/${(await $.env.get('HERDR_SESSION')) ?? 'default'}/${name}`
 
+// The script's own test for a "Needs you" heading (awk, case-blind, on each line of the message); `\s` here also takes
+// spaces awk would not, which only starts the script more often.
+const NEEDS_YOU_HEADING = /^#+\s*⚑\s*needs you/im
+
+/**
+ * True when the script's `stop` could change something after a turn that ended with `answer`. Without a section it
+ * routes nothing and writes no item; all it can do is close an ask a relayed reply answered, which that reply marks with
+ * a `.replied` file. Most turns have neither, and skip a dozen short processes. An empty answer still goes: the script
+ * then looks for the text in the transcript.
+ */
+async function isStopNeeded($: EngineInterface, answer: string): Promise<boolean> {
+  if (pane === null) return false
+  if (answer === '' || NEEDS_YOU_HEADING.test(answer)) return true
+  if (!(await $.env.get('HOME'))) return true
+  try {
+    await $.fs.stat(await queueFile($, `${pane.replaceAll(':', '_')}.json.replied`))
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** True while some session's script holds the rebuild lock (a lock over LIST_LOCK_STALE_MS old was left by a killed run). */
 async function isRebuilding($: EngineInterface): Promise<boolean> {
   try {
@@ -221,9 +243,13 @@ async function refreshQueue($: EngineInterface, isForced = true): Promise<void> 
     label: plainText(i.label),
     ask: plainBlock(i.ask),
   }))
-  await update($, queue, () => items)
-  const ms = await $.clock.now()
-  await update($, now, () => Math.floor(ms / 1000))
+  // Written only when what is drawn changes: every write draws each footer that reads it again, and an idle session's
+  // list is the same poll after poll. The time is there only for the ages the queue pane and the hover card show, so it
+  // is written when one of those would read differently (each 5s for an ask under a minute old, each minute after).
+  if (JSON.stringify(items) !== JSON.stringify(await read($, queue))) await update($, queue, () => items)
+  const at = Math.floor((await $.clock.now()) / 1000)
+  const ages = (t: number) => items.map(i => age(i.ts, t)).join()
+  if (ages(at) !== ages(await read($, now))) await update($, now, () => at)
 }
 
 const CARD_COLS = 76
@@ -311,7 +337,10 @@ export const register: Register = on => {
   // The queue's writers: what a Stop and a UserPromptSubmit hook would get, handed to the script.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId === undefined && !e.isAborted) feedQueue($, 'stop', { last_assistant_message: e.answer })
+    if (e.agentId === undefined && !e.isAborted) {
+      const answer = e.answer
+      void isStopNeeded($, answer).then(isNeeded => isNeeded && feedQueue($, 'stop', { last_assistant_message: answer }), () => {})
+    }
     return result
   })
 
@@ -428,7 +457,8 @@ export const register: Register = on => {
     const go = (item: QueueItem) => focusItem($, item)
 
     const isFloating = e.viewport?.isFullscreen === true
-    const at = await read($, now)
+    // Only the hover card shows an age: a footer that draws none does not read the time, so is not drawn again as it moves.
+    const at = isFloating ? await read($, now) : 0
     // One row, flush right: what is beneath, `herdr <pane>`, the count, then the waiting workspaces.
     return (
       <Box gap={1} flexShrink={0}>
