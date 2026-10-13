@@ -9,8 +9,14 @@ input=$(cat)
 clean='def clean: if type == "string" then gsub("[\\p{Cc}\\p{Cf}\\x{2028}\\x{2029}]"; "") else . end;'
 k='def k: if . >= 1e6 then ((. / 1e5 | round) / 10 | tostring | if test("\\.") then . else . + ".0" end) + "M" elif . >= 1e3 then "\(. / 1e3 + 0.5 | floor)k" else "\(floor)" end;'
 ts() { ( [ -n "${STATUSLINE_TZ:-}" ] && export TZ="$STATUSLINE_TZ"; date -d "@$1" "$2" || date -r "$1" "$2" ); }
-E=$(printf '\033'); R="$E[0m"; G="$E[1;32m"; B="$E[1;34m"; M="$E[1;35m"; C="$E[1;36m"; Y="$E[1;33m"
-us=$(printf '\037')
+E=$'\033'; R="$E[0m"; G="$E[1;32m"; B="$E[1;34m"; M="$E[1;35m"; C="$E[1;36m"; Y="$E[1;33m"
+us=$'\037'
+# What changes rarely is kept between redraws, one line in the config folder: the login (read again once .claude.json
+# is newer than this file) and the two reset times as drawn (formatted again once one moves, or the time zone changes).
+# Checks and reads are shell builtins, so a redraw with nothing new starts jq once and nothing else.
+cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; acct_json="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"; cache="$cfg/.statusline-cache"
+IFS="$us" read -r c_v c_email c_org c_r5 c_t5 c_r7 c_t7 c_tz < "$cache" || true
+[ "${c_v:-}" = v1 ] || { c_email=""; c_org=""; c_r5=""; c_t5=""; c_r7=""; c_t7=""; c_tz=""; }
 # Every field in one jq run (the status line is redrawn often): joined by the unit separator, which clean() strips from
 # the values, so a field can never split. An absent field is empty.
 fields=$(printf '%s' "$input" | jq -r "$clean $k"' def f(g): [g][0] // "" | tostring | clean; [
@@ -49,19 +55,32 @@ fi
 # Line 2: session and week usage with reset times, then cost
 l2=""
 add2() { [ -n "$l2" ] && l2="$l2 · "; l2="$l2$1"; }
+tz="${STATUSLINE_TZ:-}"
 if [ -n "$s5" ]; then
-  t=""; [ -n "$r5" ] && t=$(ts "$r5" '+%-I:%M %p %Z')
+  t=""
+  if [ -n "$r5" ] && [ "$r5" = "$c_r5" ] && [ "$tz" = "$c_tz" ] && [ -n "$c_t5" ]; then t=$c_t5
+  elif [ -n "$r5" ]; then t=$(ts "$r5" '+%-I:%M %p %Z'); fi
+  c_t5=$t
   if [ -n "$t" ]; then add2 "${C}session $s5% (resets $t)$R"; else add2 "${C}session $s5%$R"; fi
 fi
 if [ -n "$s7" ]; then
-  t=""; [ -n "$r7" ] && t=$(ts "$r7" '+%a %-I:%M %p %Z')
+  t=""
+  if [ -n "$r7" ] && [ "$r7" = "$c_r7" ] && [ "$tz" = "$c_tz" ] && [ -n "$c_t7" ]; then t=$c_t7
+  elif [ -n "$r7" ]; then t=$(ts "$r7" '+%a %-I:%M %p %Z'); fi
+  c_t7=$t
   if [ -n "$t" ]; then add2 "${Y}week $s7% (resets $t)$R"; else add2 "${Y}week $s7%$R"; fi
 fi
 [ -n "$cost" ] && add2 "$M$(printf '$%.2f' "$cost")$R"
 # Line 3: the Claude login (email, org)
 l3=""
-acct=$(jq -r "$clean"' [.oauthAccount.emailAddress // "", .oauthAccount.organizationName // ""] | map(strings | clean) | join("\u001f")' "${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json")
-email=${acct%%"$us"*}; org=${acct#*"$us"}
+if [ "${c_v:-}" = v1 ] && ! [ "$acct_json" -nt "$cache" ]; then email=$c_email; org=$c_org
+else
+  acct=$(jq -r "$clean"' [.oauthAccount.emailAddress // "", .oauthAccount.organizationName // ""] | map(strings | clean) | join("\u001f")' "$acct_json")
+  email=${acct%%"$us"*}; org=${acct#*"$us"}
+fi
+new_cache="v1$us$email$us$org$us$r5$us${c_t5:-}$us$r7$us${c_t7:-}$us$tz"
+[ "$new_cache" = "v1$us$c_email$us$c_org$us$c_r5$us$c_t5$us$c_r7$us$c_t7$us$c_tz" ] && ! [ "$acct_json" -nt "$cache" ] ||
+  printf '%s\n' "$new_cache" > "$cache"
 [ -n "$email" ] && l3="$G$email$R"
 [ -n "$org" ] && l3="${l3:+$l3 · }$B$org$R"
 printf '%s' "$l1"

@@ -42,4 +42,21 @@ out="$(echo "$bad" | HOME="$tmp" CLAUDE_CONFIG_DIR="$tmp/evil" bash "$here/statu
 ! printf '%s' "$out" | grep -q $'‮\|​' || fail "no invisible characters"
 grep -q 'a\[2Jb' <<<"$out" && grep -q 'Opus\[31m' <<<"$out" && grep -q 'Org\]0;pwned' <<<"$out" || fail "the names are still shown, as text"
 
+# The status line is redrawn often in every session: a redraw with nothing new runs jq once and date not at all. The
+# login is read again once .claude.json changes, and a reset time is formatted again once it moves.
+mkdir -p "$tmp/bin" "$tmp/count"
+for t in jq date; do printf '#!/bin/bash\necho x >> "%s/count/%s"\nexec %s "$@"\n' "$tmp" "$t" "$(command -v $t)" > "$tmp/bin/$t"; chmod +x "$tmp/bin/$t"; done
+mkdir -p "$tmp/cached"; cp "$tmp/profile/.claude.json" "$tmp/cached/.claude.json"
+draw() { echo "$1" | PATH="$tmp/bin:$PATH" HOME="$tmp" CLAUDE_CONFIG_DIR="$tmp/cached" STATUSLINE_TZ=UTC bash "$here/statusline.sh" | plain; }
+runs() { wc -l < "$tmp/count/$1" 2>/dev/null | tr -d ' ' || echo 0; }
+first="$(draw "$in")"; rm -f "$tmp/count/"*
+out="$(draw "$in")"
+[ "$out" = "$first" ] || fail "a cached redraw draws the same"
+[ "$(runs jq)" = 1 ] || fail "a redraw with nothing new runs jq once (ran $(runs jq))"
+[ "$(runs date)" = 0 ] || fail "a redraw with nothing new runs date not at all (ran $(runs date))"
+sleep 1; echo '{"oauthAccount":{"emailAddress":"new@example.com","organizationName":"New Org"}}' > "$tmp/cached/.claude.json"
+out="$(draw "$in")"; grep -q 'new@example.com · New Org' <<<"$out" || fail "a changed login shows at the next redraw"
+moved="${in/1800000000/1800003600}"
+out="$(draw "$moved")"; [ "$(sed -n 2p <<<"$out")" != "$(sed -n 2p <<<"$first")" ] || fail "a moved reset time shows at the next redraw"
+: > "$tmp/cached/.statusline-cache"; out="$(draw "$in")"; [ "$out" = "$(draw "$in")" ] && grep -q 'session 12%' <<<"$out" || fail "an empty cache file is ignored"
 echo "statusline.sh: all checks passed"
