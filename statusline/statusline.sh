@@ -32,6 +32,7 @@ fields=$(printf '%s' "$input" | jq -r "$clean $k"' def f(g): [g][0] // "" | tost
   f(.rate_limits.seven_day.used_percentage // empty | numbers | round),
   f(.rate_limits.seven_day.resets_at // empty | numbers | floor)
 ] | join("\u001f")')
+fields=${fields%$'\r'}   # a native Windows jq.exe ends its output with CRLF
 IFS="$us" read -r cwd proj model pct used size cost s5 r5 s7 r7 <<<"$fields"
 # Line 1: directory (first and last component only once it is over 20 characters), project, model, context
 l1=""
@@ -76,6 +77,7 @@ l3=""
 if [ "${c_v:-}" = v1 ] && ! [ "$acct_json" -nt "$cache" ]; then email=$c_email; org=$c_org
 else
   acct=$(jq -r "$clean"' [.oauthAccount.emailAddress // "", .oauthAccount.organizationName // ""] | map(strings | clean) | join("\u001f")' "$acct_json")
+  acct=${acct%$'\r'}
   email=${acct%%"$us"*}; org=${acct#*"$us"}
 fi
 new_cache="v1$us$email$us$org$us$r5$us${c_t5:-}$us$r7$us${c_t7:-}$us$tz"

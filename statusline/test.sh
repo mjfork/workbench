@@ -59,4 +59,12 @@ out="$(draw "$in")"; grep -q 'new@example.com · New Org' <<<"$out" || fail "a c
 moved="${in/1800000000/1800003600}"
 out="$(draw "$moved")"; [ "$(sed -n 2p <<<"$out")" != "$(sed -n 2p <<<"$first")" ] || fail "a moved reset time shows at the next redraw"
 : > "$tmp/cached/.statusline-cache"; out="$(draw "$in")"; [ "$out" = "$(draw "$in")" ] && grep -q 'session 12%' <<<"$out" || fail "an empty cache file is ignored"
+# Windows: a native jq.exe ends its lines with CRLF. The carriage return must not reach a field (the last one, the org),
+# where it would move the cursor, or the cache, where it would never match.
+mkdir -p "$tmp/crlf" "$tmp/win"; cp "$tmp/profile/.claude.json" "$tmp/win/.claude.json"
+printf '#!/bin/bash\n%s "$@" | sed $'"'"'s/$/\\r/'"'"'\n' "$(command -v jq)" > "$tmp/crlf/jq"; chmod +x "$tmp/crlf/jq"
+win() { echo "$in" | PATH="$tmp/crlf:$PATH" HOME="$tmp" CLAUDE_CONFIG_DIR="$tmp/win" STATUSLINE_TZ=UTC bash "$here/statusline.sh"; }
+out="$(win)"; ! printf '%s' "$out" | grep -q $'\r' || fail "no carriage return reaches the terminal"
+grep -q 'week 56% (resets Thu' <<<"$(plain <<<"$out")" || fail "the last field is read whole under CRLF"
+[ "$(win)" = "$out" ] && ! grep -q $'\r' "$tmp/win/.statusline-cache" || fail "the cache holds no carriage return"
 echo "statusline.sh: all checks passed"
