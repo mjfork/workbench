@@ -1,7 +1,7 @@
 {
   "name": "cockpit",
-  "version": "1.1.0",
-  "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer, plus the herdr-worker-tabs skill (workers start in their own tab, not a split). Four of the plugins need herdr; cache-timer does not.",
+  "version": "1.2.0",
+  "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer, plus the orchestrate skill: implementation fans out to parallel Claude workers in tabs of the current workspace, driven from your window. Four of the plugins need herdr; cache-timer does not.",
   "author": {
     "name": "Michael Fork"
   },

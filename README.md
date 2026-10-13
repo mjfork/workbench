@@ -71,7 +71,7 @@ Sometimes you want a summary and a clear ask. Sometimes you're watching and want
 
 | Plugin | What it does | Needs |
 |---|---|---|
-| `cockpit` | Installs the five below, plus the `herdr-worker-tabs` skill: workers start in their own tab, not a split of yours | herdr, for four of them |
+| `cockpit` | Installs the five below, plus `/cockpit:orchestrate`: implementation fans out to parallel Claude workers in tabs of the current workspace, driven from your window | herdr, for four of them |
 | `cache-timer` | Cache countdown, expired-cache confirm card, [handoff note](docs/handoff.md) | nothing |
 | `ctx-bar` | Context bar by tool; hover cards; `/ctxbar` | herdr, `ctx-heavy` |
 | `ctx-heavy` | Heaviest sessions across herdr; click to go | herdr, `herdr-jump`; shows sessions that run `ctx-bar` |
