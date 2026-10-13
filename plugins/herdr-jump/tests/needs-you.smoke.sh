@@ -91,4 +91,14 @@ ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fai
 mkdir "$tmp/.herdr-queue/t/.list-lock"; touch -t 200001010000 "$tmp/.herdr-queue/t/.list-lock" "$tmp/.herdr-queue/t/.list-cache"
 ny list >/dev/null; ny list >/dev/null
 test ! -e "$tmp/.herdr-queue/t/.list-lock" || fail "a stale lock is cleared"
+# The shared list goes stale only when the queue changes: a turn with no ask, or the same ask again, leaves it fresh.
+cache="$tmp/.herdr-queue/t/.list-cache"
+ny list >/dev/null; stamp() { stat -c %Y "$cache" 2>/dev/null || stat -f %m "$cache"; }
+fresh=$(stamp)
+echo "$none" | ny stop
+[ "$(stamp)" = "$fresh" ] || fail "a turn without an ask leaves the shared list fresh"
+echo "$ask" | ny stop
+[ "$(stamp)" = "$fresh" ] || fail "the same ask again leaves the shared list fresh"
+echo "$other" | ny stop
+[ "$(stamp)" != "$fresh" ] || fail "a new ask marks the shared list stale"
 echo "needs-you.sh: all checks passed"

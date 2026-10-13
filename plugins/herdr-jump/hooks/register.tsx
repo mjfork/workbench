@@ -37,6 +37,8 @@ const FOCUS_LEASE_MS = 5000
 const QUEUE_POLL_MS = 5000
 const QUEUE_FRESH_MS = 15_000
 const LIST_TIMEOUT_MS = 15_000
+// The script's rebuild lock (.list-lock): older than this, its run was killed and the script clears it. Keep the two the same.
+const LIST_LOCK_STALE_MS = 30_000
 /** The script that keeps the needs-you queue (`list`, `clear <pane>`, and the `stop` and `prompt` hook actions), shipped in this plugin's bin/. */
 const needsYou = ($: EngineInterface) => `${$.plugin.root}/bin/needs-you.sh`
 const query = atom({ plugin: 'herdr-jump', key: 'query' } as const, '')
@@ -162,12 +164,26 @@ function feedQueue($: EngineInterface, action: 'stop' | 'prompt', input: Record<
   void $.process.run(['bash', needsYou($), action], { stdin: JSON.stringify(input), timeoutMs: 20_000 }).catch(() => {})
 }
 
-/** The script's shared list, when it is fresh enough to use as is; null when stale, missing or unreadable. */
-async function cachedQueue($: EngineInterface): Promise<unknown[] | null> {
+/** A file in the script's queue folder for this herdr server. */
+const queueFile = async ($: EngineInterface, name: string) =>
+  `${await $.env.get('HOME')}/.herdr-queue/${(await $.env.get('HERDR_SESSION')) ?? 'default'}/${name}`
+
+/** True while some session's script holds the rebuild lock (a lock over LIST_LOCK_STALE_MS old was left by a killed run). */
+async function isRebuilding($: EngineInterface): Promise<boolean> {
   try {
-    const path = `${await $.env.get('HOME')}/.herdr-queue/${(await $.env.get('HERDR_SESSION')) ?? 'default'}/.list-cache`
+    const stat = await $.fs.stat(await queueFile($, '.list-lock'))
+    return (await $.clock.now()) - stat.mtimeMs < LIST_LOCK_STALE_MS
+  } catch {
+    return false
+  }
+}
+
+/** The script's shared list, when it is fresh enough to use as is (or at any age, `isAnyAge`); null when stale, missing or unreadable. */
+async function cachedQueue($: EngineInterface, isAnyAge = false): Promise<unknown[] | null> {
+  try {
+    const path = await queueFile($, '.list-cache')
     const stat = await $.fs.stat(path)
-    if ((await $.clock.now()) - stat.mtimeMs >= QUEUE_FRESH_MS) return null
+    if (!isAnyAge && (await $.clock.now()) - stat.mtimeMs >= QUEUE_FRESH_MS) return null
     const parsed: unknown = JSON.parse(String(await $.fs.read(path)))
     return Array.isArray(parsed) ? parsed : null
   } catch {
@@ -181,6 +197,11 @@ let isListing = false
 /** Refreshes the queue: from the shared list when it is fresh (the timer's poll), else from the script (`isForced`: always). */
 async function refreshQueue($: EngineInterface, isForced = true): Promise<void> {
   let parsed: unknown = isForced ? null : await cachedQueue($)
+  // Another session is rebuilding the list: keep the last one rather than start a script only to be told so.
+  if (parsed === null && !isForced && (await isRebuilding($))) {
+    parsed = await cachedQueue($, true)
+    if (parsed === null) return
+  }
   if (parsed === null) {
     if (isListing && !isForced) return
     isListing = true

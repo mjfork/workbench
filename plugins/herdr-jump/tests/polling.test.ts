@@ -107,3 +107,21 @@ test('a slow list does not stack polls: the next poll waits until it is done, an
   expect(e.scriptLists()).toBe(1)
   expect(e.timeouts.every(t => typeof t === 'number' && t > 0)).toBe(true)
 })
+
+const LOCK = '/home/ubuntu/.herdr-queue/default/.list-lock'
+
+test("while another session rebuilds the list, the poll starts nothing and keeps the last list", async ($, on) => {
+  const e = engine(on, { [CACHE]: { text: JSON.stringify(QUEUE), mtimeMs: 0 }, [LOCK]: { text: '', mtimeMs: 99_000 } })
+  await $.session.start(START)
+  await settle()
+  await e.clock.advance(5000)
+  await settle()
+  expect(e.scriptLists()).toBe(0)
+})
+
+test('a rebuild lock over 30 seconds old was left by a killed run: the poll starts the script', async ($, on) => {
+  const e = engine(on, { [CACHE]: { text: JSON.stringify(QUEUE), mtimeMs: 0 }, [LOCK]: { text: '', mtimeMs: 60_000 } })
+  await $.session.start(START)
+  await settle()
+  expect(e.scriptLists()).toBe(1)
+})

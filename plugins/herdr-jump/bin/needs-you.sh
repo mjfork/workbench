@@ -66,6 +66,8 @@ case "${1:-}" in
 stop)
   [ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ] || exit 0
   input=$(cat)
+  # The shared list goes stale only if this pane's item changes: most turns end with no ask, or the same one again.
+  before=$({ cksum < "$(item "$HERDR_PANE_ID")"; } 2>/dev/null)
   msg=$(jq -r '.last_assistant_message // ""' <<<"$input")
   # Some builds leave last_assistant_message out; fall back to the transcript's
   # last assistant text.
@@ -78,7 +80,8 @@ stop)
   driver=$(driver_of "$HERDR_PANE_ID")
   if [ -n "$(printf '%s' "$ask" | tr -d '[:space:]')" ] && [ -n "$driver" ] && [ "$driver" != "$HERDR_PANE_ID" ] && route_to_driver "$driver" "$ask"; then
     rm -f "$(item "$HERDR_PANE_ID")"   # the driver has it
-  elif [ -n "$(printf '%s' "$ask" | tr -d '[:space:]')" ]; then
+  elif [ -n "$(printf '%s' "$ask" | tr -d '[:space:]')" ] && ! jq -e --arg ask "$ask" '.ask == $ask' "$(item "$HERDR_PANE_ID")" >/dev/null 2>&1; then
+    # (The same ask again keeps its item, and its time: it has been waiting since it was first asked.)
     jq -n --arg pane "$HERDR_PANE_ID" --arg ws "${HERDR_WORKSPACE_ID:-}" --arg ask "$ask" \
       --arg cwd "$PWD" --argjson ts "$(date +%s)" \
       '{pane: $pane, workspace: $ws, ask: $ask, cwd: $cwd, ts: $ts}' > "$(item "$HERDR_PANE_ID").tmp" &&
@@ -95,7 +98,7 @@ stop)
     log "stop clears $HERDR_PANE_ID (relayed reply answered)"
     rm -f "$(item "$HERDR_PANE_ID")" "$(item "$HERDR_PANE_ID").replied"
   fi
-  drop_cache
+  [ "$({ cksum < "$(item "$HERDR_PANE_ID")"; } 2>/dev/null)" = "$before" ] || drop_cache
   ;;
 prompt)
   [ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ] || exit 0
