@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { engine, MODE_FILE, say } from './engine'
+import { engine, MODE_FILE, say, type } from './engine'
 
 // Its own file, so its stand-in hooks are the only ones answering.
 test("the footer toggle shows a driver's mode, and a click writes the pane's mode file", async ($, on) => {
@@ -15,7 +15,8 @@ test("the footer toggle shows a driver's mode, and a click writes the pane's mod
   expect(await (await footer()).find({ text: /^async$/ })).toBeDefined()
   expect(await (await footer()).find({ text: /w6A 704k/ })).toBeDefined()
 
-  // A driver's turn-mode.sh shows within the refresh.
+  // Awake (a keystroke), a driver's turn-mode.sh shows within the refresh.
+  await $.prompt.edit(type('', 'x'))
   setMode('agentic', 'w9R:p3')
   await clock.advance(3000)
   const ui = await footer()
