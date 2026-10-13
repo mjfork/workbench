@@ -1,4 +1,5 @@
 import type { On } from 'claude-code'
+import { KEY } from './engine'
 import { expect, test } from 'claude-code/testing'
 
 const QUEUE = [
@@ -11,6 +12,7 @@ type Seen = { runs: string[][]; opened: string[]; toasts: string[] }
 function engine(on: On, queue: readonly unknown[] = QUEUE, paneId?: string): Seen {
   const seen: Seen = { runs: [], opened: [], toasts: [] }
   on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w8Q', ...(paneId ? { HERDR_PANE_ID: paneId } : {}) } as Record<string, string>)[e.name] }))
+  on('prompt.edit', (_$, e) => ({ text: e.text, cursor: e.cursor }) as never)
   on('ui.toast', (_$, e) => {
     seen.toasts.push(String(e.text))
     return { value: undefined }
@@ -39,6 +41,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
   test(`queue lists asks and dialogs; clicking one focuses that pane (${surface})`, async ($, on) => {
     const seen = engine(on)
     await $.session.start({ cwd: '/tmp', surface, isInteractive: true } as never)
+    await $.prompt.edit(KEY)
     await new Promise(r => setTimeout(r, 20))
     const footer = await $.ui.mount({ plugin: 'herdr-jump', surface, component: 'SessionMode', props: { modes: [] } })
     await footer.press({ key: 'queue' })
@@ -50,6 +53,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
   test(`dismiss clears an ask (${surface})`, async ($, on) => {
     const seen = engine(on)
     await $.session.start({ cwd: '/tmp', surface, isInteractive: true } as never)
+    await $.prompt.edit(KEY)
     await new Promise(r => setTimeout(r, 20))
     const footer = await $.ui.mount({ plugin: 'herdr-jump', surface, component: 'SessionMode', props: { modes: [] } })
     await footer.press({ key: 'queue' })
@@ -63,6 +67,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
   test(`/needs-me opens the queue, with someone waiting or not (${surface})`, async ($, on) => {
     const seen = engine(on, [])
     await $.session.start({ cwd: '/tmp', surface, isInteractive: true } as never)
+    await $.prompt.edit(KEY)
     await $.command.run({ command: 'needs-me', args: '' } as never)
     expect(seen.opened).toEqual(['herdr-queue'])
     const pane = await $.ui.mount({ plugin: 'herdr-jump', surface, component: 'Pane', requestId: 'herdr-queue', props: PANE_PROPS })
@@ -74,6 +79,7 @@ for (const [name, queue] of [['someone is waiting', QUEUE], ['nobody is waiting'
   test(`the footer shows this pane's full herdr ID on its own, beside what is beneath, when ${name}`, async ($, on) => {
     engine(on, queue, 'w8Q:p3')
     await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+    await $.prompt.edit(KEY)
     await new Promise(r => setTimeout(r, 20))
     const footer = await $.ui.mount({ plugin: 'herdr-jump', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
     // The pane, not just the workspace: tabs in one workspace each read differently.
@@ -87,6 +93,7 @@ for (const [name, queue] of [['someone is waiting', QUEUE], ['nobody is waiting'
 test('without a pane ID the footer falls back to the workspace ID', async ($, on) => {
   engine(on, [])
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
   const footer = await $.ui.mount({ plugin: 'herdr-jump', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
   expect(await footer.find({ text: /^herdr w8Q$/ })).toBeDefined()
 })
@@ -96,6 +103,7 @@ const focusRuns = (seen: Seen) => seen.runs.filter(r => r[0] === 'herdr' && r[2]
 test('/needs-me-next goes to the first waiting pane in the list', async ($, on) => {
   const seen = engine(on)
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
   await $.command.run({ command: 'needs-me-next', args: '' } as never)
   expect(focusRuns(seen)).toEqual([['herdr', 'agent', 'focus', 'w8R:p1']])
   expect(seen.toasts.join()).toContain('w8R:p1')
@@ -104,6 +112,7 @@ test('/needs-me-next goes to the first waiting pane in the list', async ($, on) 
 test('/needs-me-next skips this pane and goes to the next one', async ($, on) => {
   const seen = engine(on, QUEUE, 'w8R:p1')
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
   await $.command.run({ command: 'needs-me-next', args: '' } as never)
   expect(focusRuns(seen)).toEqual([['herdr', 'agent', 'focus', 'w6N:p7']])
 })
@@ -111,6 +120,7 @@ test('/needs-me-next skips this pane and goes to the next one', async ($, on) =>
 test('/needs-me-next says so when nobody, or only this pane, is waiting', async ($, on) => {
   const none = engine(on, [])
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
   await $.command.run({ command: 'needs-me-next', args: '' } as never)
   expect(focusRuns(none)).toEqual([])
   expect(none.toasts).toEqual(['Nobody is waiting on you.'])
@@ -119,6 +129,7 @@ test('/needs-me-next says so when nobody, or only this pane, is waiting', async 
 test('/needs-me-next with only this pane waiting stays put', async ($, on) => {
   const seen = engine(on, [QUEUE[0]], 'w8R:p1')
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
   await $.command.run({ command: 'needs-me-next', args: '' } as never)
   expect(focusRuns(seen)).toEqual([])
   expect(seen.toasts).toEqual(['Only this session is waiting on you.'])

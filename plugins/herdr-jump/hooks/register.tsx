@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { PaneRow, QueueItem } from '../types'
 import { chipsOf, FOOTER_COLS, reservedCols } from './footer'
@@ -39,6 +39,12 @@ const QUEUE_FRESH_MS = 15_000
 const LIST_TIMEOUT_MS = 15_000
 // The script's rebuild lock (.list-lock): older than this, its run was killed and the script clears it. Keep the two the same.
 const LIST_LOCK_STALE_MS = 30_000
+// The two polls run only while the session is awake. ~55 sessions share one machine, and a timer that fires in an idle
+// one wakes its whole process, so the system can never leave it swapped out. A session starts asleep; the person's
+// input (a first edit in the prompt box: Claude Code has no terminal-focus event), its own work (a turn, a tool call),
+// a slash command, or a press on this mod's footer or panes wakes it, and IDLE_MS with none of those puts it back to
+// sleep. Asleep, the footer shows the last queue it read, and no session tracks focus for /jump-back.
+const IDLE_MS = 10 * 60_000
 /** The script that keeps the needs-you queue (`list`, `clear <pane>`, and the `stop` and `prompt` hook actions), shipped in this plugin's bin/. */
 const needsYou = ($: EngineInterface) => `${$.plugin.root}/bin/needs-you.sh`
 const query = atom({ plugin: 'herdr-jump', key: 'query' } as const, '')
@@ -47,6 +53,58 @@ const queue = atom({ plugin: 'herdr-jump', key: 'queue' } as const, [])
 const now = atom({ plugin: 'herdr-jump', key: 'now' } as const, 0)
 // This pane's herdr ID, for the queue script (outside herdr: null).
 let pane: string | null = null
+
+// Inside herdr only: outside it there is nothing to poll, and nothing wakes.
+let isInHerdr = false
+let isAwake = false
+// When the last wake event came, as the poll last saw it. A wake while awake only sets isActive, so a keystroke costs
+// no clock read; the next queue poll moves lastActivity on.
+let lastActivity = 0
+let isActive = false
+let timers: Timer[] = []
+
+/** Starts the polls with one refresh at once; awake already, it only notes the activity. Never awaited by its callers. */
+function wake($: EngineInterface): void {
+  if (!isInHerdr) return
+  if (isAwake) {
+    isActive = true
+    return
+  }
+  isAwake = true
+  isActive = false
+  // A wake rides on a tool call or a keystroke: nothing in it may throw into that.
+  try {
+    void $.clock.now().then(ms => { lastActivity = ms }, () => {})
+    void pollFocus($).catch(() => {})
+    void refreshQueue($, false).catch(() => {})
+    timers = [
+      $.clock.every(FOCUS_POLL_MS, () => void pollFocus($).catch(() => {})),
+      $.clock.every(QUEUE_POLL_MS, () => void pollQueue($).catch(() => {})),
+    ]
+  } catch {
+    sleep()
+  }
+}
+
+/** Cancels the polls; the next wake event starts them again. */
+function sleep(): void {
+  isAwake = false
+  for (const timer of timers) timer.cancel()
+  timers = []
+}
+
+/** The queue timer's poll, which also tells when the session has gone IDLE_MS without a wake event and sleeps it. */
+async function pollQueue($: EngineInterface): Promise<void> {
+  const ms = await $.clock.now()
+  if (isActive) {
+    isActive = false
+    lastActivity = ms
+  } else if (ms - lastActivity >= IDLE_MS) {
+    sleep()
+    return
+  }
+  await refreshQueue($, false)
+}
 
 const STATUS_COLOR: Record<string, string> = { blocked: 'red', working: 'yellow', idle: 'green', done: 'green' }
 
@@ -291,6 +349,7 @@ function age(ts: number | null, at: number): string {
 }
 
 async function openQueue($: EngineInterface): Promise<void> {
+  wake($)
   await refreshQueue($)
   const items = await read($, queue)
   const rows = items.reduce((n, i) => n + 1 + Math.min(4, i.ask.split('\n').length), 2)
@@ -301,6 +360,7 @@ export const register: Register = on => {
   let current: string | undefined
 
   on('session.start', async ($, e, next) => {
+    isInHerdr = false
     if ((await $.env.get('HERDR_ENV')) === '1') {
       current = await $.env.get('HERDR_WORKSPACE_ID')
       await $.command.register({
@@ -325,17 +385,17 @@ export const register: Register = on => {
         immediate: true,
       })
       pane = (await $.env.get('HERDR_PANE_ID')) ?? null
-      void pollFocus($).catch(() => {})
-      $.clock.every(FOCUS_POLL_MS, () => void pollFocus($).catch(() => {}))
-      void refreshQueue($, false).catch(() => {})
-      $.clock.every(QUEUE_POLL_MS, () => void refreshQueue($, false).catch(() => {}))
+      isInHerdr = true
     }
+    // Asleep until something wakes it: no poll, and the footer draws the queue it last read (none yet).
+    sleep()
 
     return next(e)
   })
 
   // The queue's writers: what a Stop and a UserPromptSubmit hook would get, handed to the script.
   on('turn.complete', async ($, e, next) => {
+    wake($)
     const result = await next(e)
     if (e.agentId === undefined && !e.isAborted) {
       const answer = e.answer
@@ -348,11 +408,30 @@ export const register: Register = on => {
   // arrives as the same): a plugin's own, a task's, a peer's or a schedule's is not. A prompt another plugin drops
   // (the cache card's hold, say) is not an answer yet.
   on('prompt.submit', async ($, e, next) => {
+    wake($)
     const result = await next(e)
     // A plugin that submits the person's own held words (asUser) is the person too: the cache card's resend.
     const isPerson = e.origin.kind === 'composer' || e.origin.kind === 'bridge' || (e.origin.kind === 'plugin' && (e.origin as { asUser?: boolean }).asUser === true)
     if (isPerson && (result as { drop?: unknown } | undefined)?.drop === undefined) feedQueue($, 'prompt', { prompt: e.text })
     return result
+  })
+
+  // The wake events. Each passes its event on untouched; an edit in the prompt box costs a flag while awake.
+  on('prompt.edit', ($, e, next) => {
+    wake($)
+    return next(e)
+  })
+  on('turn.start', ($, e, next) => {
+    wake($)
+    return next(e)
+  })
+  on('tool.call', ($, e, next) => {
+    wake($)
+    return next(e)
+  })
+  on('command.run', ($, e, next) => {
+    wake($)
+    return next(e)
   })
 
   on('command.run', { command: QUEUE_COMMAND }, async $ => {
@@ -454,7 +533,10 @@ export const register: Register = on => {
 
     // After the count: the waiting panes that fit in the width of the context bar, click one to go there; `+N` is the rest.
     const { chips, more } = chipsOf(items, current, pane, Math.max(0, FOOTER_COLS - reservedCols(here, depth)))
-    const go = (item: QueueItem) => focusItem($, item)
+    const go = (item: QueueItem) => {
+      wake($)
+      return focusItem($, item)
+    }
 
     const isFloating = e.viewport?.isFullscreen === true
     // Only the hover card shows an age: a footer that draws none does not read the time, so is not drawn again as it moves.
