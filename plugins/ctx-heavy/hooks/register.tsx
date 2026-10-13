@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Heavy, PaneReport } from '../types'
 
@@ -29,6 +29,11 @@ const HEAVY_COUNT = 4
 const HEAVY_POLL_MS = 10_000
 const HEAVY_LEASE_MS = 3 * HEAVY_POLL_MS
 const TICK_MS = 60_000
+// A session starts asleep and polls only while the person is at it: dozens of idle sessions each waking every ten
+// seconds keep all their memory touched, so none can stay swapped out. Input wakes a session (a keystroke in the
+// prompt box stands for its pane taking focus, which the engine does not report); this long with none puts it back to
+// sleep. Asleep, it renews no lease: once every session sleeps the summary goes stale, and the first to wake takes it.
+const IDLE_MS = 10 * 60_000
 
 export const fmt = (tokens: number): string =>
   tokens >= 1000 ? `${(tokens / 1000).toFixed(tokens >= 10_000 ? 0 : 1)}k` : `${tokens}`
@@ -95,6 +100,48 @@ type Seen = { mtimeMs: number; size: number; row: Heavy | null }
 
 /** What one session keeps between polls: who it is, the reports it has read, and whether a poll is still running. */
 type Poller = { me: string; seen: Map<string, Seen>; isPolling: boolean }
+
+/**
+ * Whether this session is awake, and its timer while it is. `lastActivity` is when a poll last found input since the
+ * one before it; input itself only sets `hasInput`, so a keystroke while awake costs no event and moves no timer.
+ * Module state: a reload runs register again, which starts it asleep.
+ */
+type Waker = { poller: Poller; isAwake: boolean; hasInput: boolean; lastActivity: number; timer: Timer | null }
+let waker: Waker | null = null
+
+/**
+ * Input from the person: wakes a sleeping session, polling at once and on the timer it starts with the `$` of the hook
+ * that woke it; awake, it puts off the idle deadline.
+ */
+function noteInput($: EngineInterface) {
+  if (waker === null) return
+  waker.hasInput = true
+  if (waker.isAwake) return
+  const w = waker
+  w.isAwake = true
+  void poll($, w)
+  w.timer = $.clock.every(HEAVY_POLL_MS, () => void poll($, w))
+}
+
+/** One period's poll: asleep after IDLE_MS with no input (its timer cancelled, nothing read), else a refresh. */
+async function poll($: EngineInterface, w: Waker) {
+  if (w !== waker || !w.isAwake) return
+  try {
+    const now = await $.clock.now()
+    if (w.hasInput) {
+      w.hasInput = false
+      w.lastActivity = now
+    } else if (now - w.lastActivity >= IDLE_MS) {
+      w.isAwake = false
+      w.timer?.cancel()
+      w.timer = null
+      return
+    }
+    await refreshHeavy($, w.poller)
+  } catch {
+    // A poll that fails leaves the rows drawn; the next tries again.
+  }
+}
 
 type Summary = { pane?: unknown; at?: unknown; rows?: unknown }
 
@@ -173,17 +220,47 @@ async function show($: EngineInterface, rows: Heavy[], now: number) {
 }
 
 export const register: Register = on => {
+  waker?.timer?.cancel()
+  waker = null
+
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     if ((await $.env.get('HERDR_ENV')) === '1') {
       // Outside a pane's ID, a name of its own, so its lease is never taken for another session's.
       const me = (await $.env.get('HERDR_PANE_ID')) || `session-${Math.random().toString(36).slice(2)}`
-      const poller: Poller = { me, seen: new Map(), isPolling: false }
-      void refreshHeavy($, poller).catch(() => {})
-      $.clock.every(HEAVY_POLL_MS, () => void refreshHeavy($, poller).catch(() => {}))
+      waker?.timer?.cancel()
+      // Asleep: no timer and no read until the person's first input; the footer keeps the rows last drawn.
+      waker = { poller: { me, seen: new Map(), isPolling: false }, isAwake: false, hasInput: false, lastActivity: 0, timer: null }
     }
 
     return result
+  })
+
+  // What wakes a session: the person typing, submitting or running a command, and the session's own work. Each
+  // passes on untouched.
+  on('prompt.edit', ($, e, next) => {
+    noteInput($)
+    return next(e)
+  })
+  on('prompt.submit', ($, e, next) => {
+    noteInput($)
+    return next(e)
+  })
+  on('command.run', ($, e, next) => {
+    noteInput($)
+    return next(e)
+  })
+  on('turn.start', ($, e, next) => {
+    noteInput($)
+    return next(e)
+  })
+  on('tool.call', ($, e, next) => {
+    noteInput($)
+    return next(e)
+  })
+  on('turn.complete', ($, e, next) => {
+    noteInput($)
+    return next(e)
   })
 
   // The footer's mode labels, where herdr-jump draws (this mod runs first: it
@@ -196,6 +273,7 @@ export const register: Register = on => {
     const now = await drawnAt($)
 
     const go = async (row: Heavy) => {
+      noteInput($)
       const focused = await $.process.run(['herdr', 'agent', 'focus', row.pane])
       if (focused.exitCode !== 0) await $.process.run(['herdr', 'workspace', 'focus', row.workspace])
     }
