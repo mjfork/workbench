@@ -8,6 +8,8 @@ export HERDR_BIN="$tmp/herdr"
 mkdir -p "$CLAUDE_CONFIG_DIR/ctx/mode"
 cat > "$HERDR_BIN" <<'STUB'
 #!/usr/bin/env bash
+echo "$1 $2" >> "$HOME/herdr-calls"
+[ "$1 $2" = "agent list" ] && sleep "${STUB_SLEEP:-0}"
 case "$1 $2" in
   "agent list") echo '{"result":{"agents":[{"pane_id":"w8:p2","workspace_id":"w8","tab_id":"w8:t1","agent_status":"idle"},{"pane_id":"w8:p3","workspace_id":"w8","tab_id":"w8:t2","agent_status":"blocked"},{"pane_id":"w9:p1","workspace_id":"w9","tab_id":"w9:t1","agent_status":"idle"}]}}' ;;
   "workspace list") echo '{"result":{"workspaces":[{"workspace_id":"w8","label":"Alpha"},{"workspace_id":"w9","label":"Beta"}]}}' ;;
@@ -75,4 +77,18 @@ echo "$hostile" | ny stop
 jq -e '.ask | test("[\\x{0}-\\x{8}\\x{b}-\\x{1f}\\x{202e}]") | not' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "a queued ask carries no control characters"
 [ -z "$(find "$tmp" -name .last-stop-input.json)" ] || fail "a Stop input is not kept on disk"
 [ -z "$(find "$tmp/.herdr-queue" -perm -077 2>/dev/null)" ] || fail "the queue is private to this user"
+# Every footer polls `list`. A stop or prompt only marks the shared list stale, and one rebuild runs at a time: the
+# rest are served the last list. 60 footers polling at once must ask herdr once, not 60 times.
+echo "$ask" | ny stop
+test -f "$tmp/.herdr-queue/t/.list-cache" || fail "a stop marks the shared list stale; it does not delete it"
+: > "$tmp/herdr-calls"
+for i in $(seq 60); do STUB_SLEEP=1 ny list > "$tmp/out.$i" & done; wait
+[ "$(grep -c 'agent list' "$tmp/herdr-calls")" = 1 ] || fail "60 polls at once rebuild the list once (got $(grep -c 'agent list' "$tmp/herdr-calls"))"
+for i in $(seq 60); do jq -e 'type == "array"' "$tmp/out.$i" >/dev/null || fail "every poll gets a list, even while another rebuilds"; done
+test ! -e "$tmp/.herdr-queue/t/.list-lock" || fail "the rebuild lock is released"
+ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "the rebuilt list carries the ask"
+# A lock left by a killed rebuild does not stop the list for good.
+mkdir "$tmp/.herdr-queue/t/.list-lock"; touch -t 200001010000 "$tmp/.herdr-queue/t/.list-lock" "$tmp/.herdr-queue/t/.list-cache"
+ny list >/dev/null; ny list >/dev/null
+test ! -e "$tmp/.herdr-queue/t/.list-lock" || fail "a stale lock is cleared"
 echo "needs-you.sh: all checks passed"

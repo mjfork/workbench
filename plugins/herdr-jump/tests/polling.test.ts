@@ -11,13 +11,18 @@ const QUEUE = [{ pane: 'w8R:p1', workspace: 'w8R', label: 'x', kind: 'ask', ask:
 const START = { cwd: '/tmp', surface: 'terminal', isInteractive: true } as never
 const settle = () => new Promise(r => setTimeout(r, 20))
 
-function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }> = {}) {
+function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }> = {}, opts: { hangList?: boolean } = {}) {
   const runs: string[][] = []
+  const timeouts: (number | undefined)[] = []
   const clock = mock.clock(on, { now: 100_000 })
   const env: Record<string, string> = { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HOME: '/home/ubuntu', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
   on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('process.run', (_$, e) => {
     runs.push([...e.argv])
+    if (e.argv[0] === 'bash' && e.argv[2] === 'list') {
+      timeouts.push(e.init?.timeoutMs)
+      if (opts.hangList) return new Promise(() => {}) as never
+    }
     const stdout = e.argv[0] === 'herdr' ? JSON.stringify({ result: { panes: [{ pane_id: 'w9B:p2', focused: true }] } }) : JSON.stringify(QUEUE)
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -39,7 +44,7 @@ function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   const herdrPolls = () => runs.filter(r => r[0] === 'herdr' && r[1] === 'pane' && r[2] === 'list').length
   const scriptLists = () => runs.filter(r => r[0] === 'bash' && r[2] === 'list').length
-  return { runs, clock, files, herdrPolls, scriptLists }
+  return { runs, clock, files, herdrPolls, scriptLists, timeouts }
 }
 
 test('with no lease, this session takes it and polls herdr for focus', async ($, on) => {
@@ -88,4 +93,17 @@ test('with no shared list yet, or one that does not parse, the poll starts the s
   await $.session.start(START)
   await settle()
   expect(e.scriptLists()).toBe(1)
+})
+
+test('a slow list does not stack polls: the next poll waits until it is done, and each run has a time limit', async ($, on) => {
+  const e = engine(on, {}, { hangList: true })
+  await $.session.start(START)
+  await settle()
+  expect(e.scriptLists()).toBe(1)
+  await e.clock.advance(5000)
+  await settle()
+  await e.clock.advance(5000)
+  await settle()
+  expect(e.scriptLists()).toBe(1)
+  expect(e.timeouts.every(t => typeof t === 'number' && t > 0)).toBe(true)
 })

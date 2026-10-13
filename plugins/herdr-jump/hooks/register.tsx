@@ -32,10 +32,11 @@ const FOCUS_POLL_MS = 2000
 const FOCUS_LEASE_MS = 5000
 // The queue: every footer polls it, but the script keeps one list for all of them (in .list-cache, under
 // QUEUE_FRESH_MS old; the same age as the script's own check). A footer reads that file itself, and starts the script
-// only when the file is stale or missing. A turn's stop or a prompt drops the file, so a new ask shows at the next poll;
+// only when the file is stale or missing. A turn's stop or a prompt marks the file stale, so a new ask shows at the next poll;
 // the age bounds only how late a pane blocked on a dialog shows.
 const QUEUE_POLL_MS = 5000
 const QUEUE_FRESH_MS = 15_000
+const LIST_TIMEOUT_MS = 15_000
 /** The script that keeps the needs-you queue (`list`, `clear <pane>`, and the `stop` and `prompt` hook actions), shipped in this plugin's bin/. */
 const needsYou = ($: EngineInterface) => `${$.plugin.root}/bin/needs-you.sh`
 const query = atom({ plugin: 'herdr-jump', key: 'query' } as const, '')
@@ -174,13 +175,22 @@ async function cachedQueue($: EngineInterface): Promise<unknown[] | null> {
   }
 }
 
+/** True while this session's script run is going: a timer poll then skips, so a slow herdr cannot stack runs up. */
+let isListing = false
+
 /** Refreshes the queue: from the shared list when it is fresh (the timer's poll), else from the script (`isForced`: always). */
 async function refreshQueue($: EngineInterface, isForced = true): Promise<void> {
   let parsed: unknown = isForced ? null : await cachedQueue($)
   if (parsed === null) {
-    const listed = await $.process.run(['bash', needsYou($), 'list'])
-    if (listed.exitCode !== 0) return
-    parsed = JSON.parse(listed.stdout)
+    if (isListing && !isForced) return
+    isListing = true
+    try {
+      const listed = await $.process.run(['bash', needsYou($), 'list'], { timeoutMs: LIST_TIMEOUT_MS })
+      if (listed.exitCode !== 0) return
+      parsed = JSON.parse(listed.stdout)
+    } finally {
+      isListing = false
+    }
   }
   // Each ask is another session's reply: drawn as text, never as terminal codes.
   const items: QueueItem[] = (Array.isArray(parsed) ? (parsed as QueueItem[]) : []).map(i => ({
