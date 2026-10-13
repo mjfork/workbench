@@ -46,11 +46,53 @@ let handoffTrigger: { at: number; ageMin: number | null } | null = null
 // This pane's herdr ID when there is one: other sessions look the state file up by it (cache-state.sh).
 let pane: string | null = null
 
-/** The transcript's tail; empty when there is none yet. */
+// How much of the transcript's end is read: enough for the last responses and a handoff.
+const TAIL_BYTES = 400_000
+// This session's transcript, kept once found: the path the engine gives (`classic.SessionStart` and `classic.Stop` carry
+// it), else the one the projects glob found. `isGiven`: the engine's, kept even before the file is written.
+let transcript: { session: string; path: string; isGiven: boolean } | null = null
+
+/** The path of the transcript of session `id`, by a glob over the config folder's projects; null when there is none yet. */
+async function findTranscript($: EngineInterface, id: string): Promise<string | null> {
+  const found = await $.process.run(['bash', '-c', 'ls "$1"/projects/*/"$2".jsonl 2>/dev/null | head -1', '_', await claudeDir($), id], { timeoutMs: 5000 }).catch(() => null)
+  const path = found?.exitCode === 0 ? found.stdout.trim() : ''
+  return path === '' ? null : path
+}
+
+/** This session's transcript path: the one kept for its id, else found (and kept); null when there is none yet. */
+async function transcriptPath($: EngineInterface, id: string): Promise<string | null> {
+  if (transcript?.session === id) return transcript.path
+  const path = await findTranscript($, id)
+  transcript = path === null ? null : { session: id, path, isGiven: false }
+  return path
+}
+
+/**
+ * The transcript's tail; empty when there is none yet. A file of at most TAIL_BYTES is read whole by the engine, a larger
+ * one cut by `tail -c`. A found path that is gone (the file moved) is looked for again, once.
+ */
 async function readTail($: EngineInterface): Promise<string> {
   const id = await $.session.id()
-  const tail = await $.process.run(['bash', '-c', 'f=$(ls "$1"/projects/*/"$2".jsonl 2>/dev/null | head -1); [ -n "$f" ] && tail -c 400000 "$f"', '_', await claudeDir($), id], { timeoutMs: 5000 })
+  const wasKept = transcript?.session === id
+  const path = await transcriptPath($, id)
+  if (path === null) return ''
+  const stat = await $.fs.stat(path).catch(() => null)
+  if (stat === null) {
+    if (transcript?.isGiven) return ''
+    transcript = null
+    return wasKept ? readTail($) : ''
+  }
+  if (stat.size <= TAIL_BYTES) {
+    const text = await $.fs.read(path).catch(() => null)
+    if (text !== null) return text
+  }
+  const tail = await $.process.run(['tail', '-c', String(TAIL_BYTES), path], { timeoutMs: 5000 })
   return tail.exitCode === 0 ? tail.stdout : ''
+}
+
+/** Keeps the transcript path a classic event carries: the engine's own, so no glob is needed. */
+function keepTranscript(e: { session_id?: string; transcript_path?: string }): void {
+  if (e.session_id && e.transcript_path) transcript = { session: e.session_id, path: e.transcript_path, isGiven: true }
 }
 
 /** The transcript's last main response: its time and its cache's TTL. */
@@ -209,6 +251,17 @@ async function isFocused($: EngineInterface): Promise<boolean> {
 export const register: Register = (on, options) => {
   handoffLeadMs = handoffLeadMsOf(options)
   handoffMinTokens = handoffMinTokensOf(options)
+  transcript = null
+
+  // The engine names the transcript at start (and after /clear) and at each main turn's end: kept, so it is not globbed for.
+  on('classic.SessionStart', async ($, e, next) => {
+    keepTranscript(e)
+    return next(e)
+  })
+  on('classic.Stop', async ($, e, next) => {
+    keepTranscript(e)
+    return next(e)
+  })
 
   on('session.start', async ($, e, next) => {
     pane = (await $.env.get('HERDR_PANE_ID')) ?? null
