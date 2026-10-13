@@ -38,6 +38,135 @@ const empty = (): Record<Kind, number> => ({
   fixed: 0, chat: 0, Bash: 0, Read: 0, Agent: 0, mcp: 0, edit: 0, other: 0,
 })
 
+/** A tool call as measured once: what owns its result, and its input's size. */
+type Call = { tool: string; label: string; kind: Kind; chars: number }
+
+/** What tells a message read again from a changed one, without reading its text. */
+type Seen = { role: string; chars: number; uses: number; results: number; id: string | undefined }
+
+const charsOf = (m: SessionMessage) => {
+  let chars = m.text.length
+  for (const r of m.toolResults ?? []) chars += r.text.length
+
+  return chars
+}
+
+const idOf = (m: SessionMessage) => m.toolUses[0]?.tool_use_id ?? m.toolResults?.[0]?.tool_use_id
+
+const seenOf = (m: SessionMessage): Seen => ({
+  role: m.role,
+  chars: charsOf(m),
+  uses: m.toolUses.length,
+  results: m.toolResults?.length ?? 0,
+  id: idOf(m),
+})
+
+// Read on every refresh for every message counted, so it builds nothing.
+const isSame = (s: Seen, m: SessionMessage) =>
+  s.role === m.role && s.uses === m.toolUses.length && s.results === (m.toolResults?.length ?? 0)
+  && s.id === idOf(m) && s.chars === charsOf(m)
+
+/**
+ * Adds `chunk` to `list`, biggest first, keeping at most `max`. An equal one
+ * already there stays ahead: what a stable sort of every chunk would give.
+ */
+const rank = (list: Chunk[], chunk: Chunk, max: number) => {
+  let i = list.length
+  while (i > 0 && list[i - 1]!.tokens < chunk.tokens) i--
+  if (i >= max) return
+  list.splice(i, 0, chunk)
+  if (list.length > max) list.pop()
+}
+
+const LARGEST = 5
+const PER_KIND = 2
+
+/**
+ * A measure that remembers the transcript it last measured. Called again with
+ * that transcript plus new messages, it measures only the new ones; when any
+ * message it counted is gone or changed (a compaction, a rewind, a cleared
+ * result, the oldest falling out of the read), it counts them all again. Each
+ * tool input is sized once, by its tool_use_id, either way.
+ *
+ * Counts are kept in characters, whole numbers, so the totals equal a single
+ * pass's sum of quarter-tokens exactly.
+ */
+export const measurer = () => {
+  let calls = new Map<string, Call>()
+  let seen: Seen[] = []
+  let chars = empty()
+  let toolOf = new Map<string, Call>()
+  let largest: Chunk[] = []
+  let top = {} as Record<Kind, Chunk[]>
+
+  const reset = () => {
+    seen = []
+    chars = empty()
+    toolOf = new Map()
+    largest = []
+    top = {} as Record<Kind, Chunk[]>
+    for (const k of KINDS) top[k] = []
+  }
+  reset()
+
+  const add = (m: SessionMessage, before: Map<string, Call>) => {
+    seen.push(seenOf(m))
+    chars.chat += m.text.length
+
+    for (const use of m.toolUses) {
+      let call = calls.get(use.tool_use_id) ?? before.get(use.tool_use_id)
+      if (call === undefined) {
+        call = {
+          tool: use.tool,
+          label: labelOf(use.tool, use.input),
+          kind: kindOf(use.tool),
+          chars: JSON.stringify(use.input).length,
+        }
+      }
+      calls.set(use.tool_use_id, call)
+      toolOf.set(use.tool_use_id, call)
+      chars[call.kind] += call.chars
+    }
+
+    for (const r of m.toolResults ?? []) {
+      const owner = toolOf.get(r.tool_use_id) ?? { tool: 'other', label: '' }
+      const kind = kindOf(owner.tool)
+      chars[kind] += r.text.length
+      const chunk = { tool: owner.tool, label: owner.label, tokens: estimate(r.text.length) }
+      rank(largest, chunk, LARGEST)
+      rank(top[kind], chunk, PER_KIND)
+    }
+  }
+
+  return (
+    messages: readonly SessionMessage[],
+    used: number,
+    window: number,
+    categories: readonly ContextCategory[] | undefined,
+  ): Snapshot => {
+    let isPrefix = messages.length >= seen.length
+    for (let i = 0; isPrefix && i < seen.length; i++) isPrefix = isSame(seen[i]!, messages[i]!)
+
+    try {
+      if (isPrefix) {
+        for (let i = seen.length; i < messages.length; i++) add(messages[i]!, calls)
+      } else {
+        // Keep only the calls still in the transcript; the rest are read from the old map once.
+        const before = calls
+        calls = new Map()
+        reset()
+        for (const m of messages) add(m, before)
+      }
+    } catch (error) {
+      // Half counted: the next call counts everything again.
+      reset()
+      throw error
+    }
+
+    return snapshotOf(chars, largest, top, used, window, categories)
+  }
+}
+
 /**
  * Splits the used context by kind. `used` is the engine's own figure for the
  * window's fill; `fixed` is the breakdown's non-message rows (system prompt,
@@ -49,26 +178,18 @@ export const measure = (
   used: number,
   window: number,
   categories: readonly ContextCategory[] | undefined,
+): Snapshot => measurer()(messages, used, window, categories)
+
+const snapshotOf = (
+  chars: Record<Kind, number>,
+  largest: readonly Chunk[],
+  top: Record<Kind, Chunk[]>,
+  used: number,
+  window: number,
+  categories: readonly ContextCategory[] | undefined,
 ): Snapshot => {
   const raw = empty()
-  const toolOf = new Map<string, { tool: string; label: string }>()
-  const chunks: Chunk[] = []
-
-  for (const m of messages) {
-    raw.chat += estimate(m.text.length)
-
-    for (const use of m.toolUses) {
-      toolOf.set(use.tool_use_id, { tool: use.tool, label: labelOf(use.tool, use.input) })
-      raw[kindOf(use.tool)] += estimate(JSON.stringify(use.input).length)
-    }
-
-    for (const r of m.toolResults ?? []) {
-      const owner = toolOf.get(r.tool_use_id) ?? { tool: 'other', label: '' }
-      const tokens = estimate(r.text.length)
-      raw[kindOf(owner.tool)] += tokens
-      chunks.push({ tool: owner.tool, label: owner.label, tokens })
-    }
-  }
+  for (const k of KINDS) raw[k] = estimate(chars[k])
 
   // Fixed overhead: every row in the window except the conversation itself.
   // The breakdown has no kind for Messages, so its label is the only handle.
@@ -85,15 +206,13 @@ export const measure = (
   for (const k of KINDS) tokens[k] = Math.round(raw[k] * scale)
   tokens.fixed = Math.round(fixedClamped + (rawTotal > 0 ? 0 : pool))
 
-  const scaled = chunks
-    .sort((a, b) => b.tokens - a.tokens)
-    .map(c => ({ ...c, tokens: Math.round(c.tokens * scale) }))
-  const largest = scaled.slice(0, 5)
+  // Scaling keeps the order: the biggest before it are the biggest after.
+  const scaled = (c: Chunk) => ({ ...c, tokens: Math.round(c.tokens * scale) })
 
   const byKind = {} as Record<Kind, Chunk[]>
-  for (const k of KINDS) byKind[k] = scaled.filter(c => kindOf(c.tool) === k).slice(0, 2)
+  for (const k of KINDS) byKind[k] = top[k].map(scaled)
 
-  return { tokens, used, window, largest, byKind }
+  return { tokens, used, window, largest: largest.map(scaled), byKind }
 }
 
 /** Cells per kind in a bar `width` wide; every non-zero kind gets at least one. */
