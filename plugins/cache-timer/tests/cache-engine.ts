@@ -6,14 +6,26 @@ export const MIN = 60_000
 // A resumed transcript whose last response wrote to the 5-minute cache (at time 0): a short clock, yellow in its last 1.25 minutes.
 export const TAIL_5M = JSON.stringify({ type: 'assistant', timestamp: new Date(0).toISOString(), message: { usage: { cache_creation: { ephemeral_5m_input_tokens: 900, ephemeral_1h_input_tokens: 0 } } } })
 
-export type Seen = { logs: string[]; toasts: string[]; fills: string[]; submits: string[]; commands: string[]; opened: string[]; closed: string[]; files: Record<string, string>; compacts: number; runs: string[][]; events: string[]; stdins: (string | undefined)[] }
+export type Seen = { wakes: number[]; logs: string[]; toasts: string[]; fills: string[]; submits: string[]; commands: string[]; opened: string[]; closed: string[]; files: Record<string, string>; compacts: number; runs: string[][]; events: string[]; stdins: (string | undefined)[] }
 
 /** Stands in for the engine; the transcript tail is empty unless given. */
 // The transcript sits in the config folder's projects/<project>/<session id>.jsonl, found by the glob; `transcript` moves it
 // (null: gone), `session.id` changes the session's id.
 export function engine(on: On, opts: { env?: Record<string, string>; tail?: string; cwd?: string; focused?: boolean; tokens?: number; dirs?: Record<string, { name: string; mtimeMs: number }[]>; session?: { id: string }; transcript?: { path: string | null } } = {}) {
-  const seen: Seen = { logs: [], toasts: [], fills: [], submits: [], commands: [], opened: [], closed: [], files: {}, compacts: 0, runs: [], events: [], stdins: [] }
-  const clock = mock.clock(on)
+  const seen: Seen = { wakes: [], logs: [], toasts: [], fills: [], submits: [], commands: [], opened: [], closed: [], files: {}, compacts: 0, runs: [], events: [], stdins: [] }
+  // Each timer of the plugin's that fires ($.clock.after, a period of $.clock.every) is a wake-up: its time is kept.
+  const counted = ((name: string, ...rest: unknown[]) => {
+    const fn = rest.at(-1) as (...a: unknown[]) => Promise<unknown>
+    if (name === 'clock.after' || name === 'clock.every') {
+      rest[rest.length - 1] = async (...a: unknown[]) => {
+        const done = await fn(...a)
+        seen.wakes.push(clock.now())
+        return done
+      }
+    }
+    return (on as (...a: unknown[]) => unknown)(name, ...rest)
+  }) as On
+  const clock = mock.clock(counted)
   const env = opts.env ?? { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
   const session = opts.session ?? { id: 's1' }
   // Where the transcript is: none until a tail is given.
