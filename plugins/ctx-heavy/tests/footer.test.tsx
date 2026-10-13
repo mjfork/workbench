@@ -64,6 +64,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     on('clock.every', () => ({ deny: 'no timers' }) as never)
     on('fs.write', () => ({ value: undefined }) as never)
     on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+    on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
     // Stands for herdr-jump's line, the one this mod runs ahead of.
     on('ui.render', { component: 'SessionMode' }, ($, e) => {
       const { Text } = $.ui.resolve(e)
@@ -75,7 +76,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     })
 
     await $.session.start({ cwd: '/tmp', surface, isInteractive: true } as never)
-    // The refreshes session.start leaves running settle before drawing.
+    // A session starts asleep: a turn wakes it, and the refresh that leaves running settles before drawing.
+    await $.turn.start({ text: 'hi', turnId: 't1' })
     await new Promise(r => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(() => r(undefined), 20))
 
     const ui = await $.ui.mount({ plugin: 'ctx-heavy', surface, component: 'SessionMode', props: { modes: [] } })
