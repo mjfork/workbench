@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import { CACHE_COLOR, cacheLabel, cacheState, cardLines, handoffDue, handoffInTranscript, handoffLeadMsOf, handoffMinTokensOf, handoffNote, isWorthHandoff, previewOf, resumePrompt, HANDOFF_MARK, HANDOFF_TURN_PROMPT, isMachinePrompt, isNoHandoff, lastResponse, paramsOf, redact, withTtl } from './cache'
+import { CACHE_COLOR, cacheLabel, cacheState, cardLines, nextWake, handoffDue, handoffInTranscript, handoffLeadMsOf, handoffMinTokensOf, handoffNote, isWorthHandoff, previewOf, resumePrompt, HANDOFF_MARK, HANDOFF_TURN_PROMPT, isMachinePrompt, isNoHandoff, lastResponse, paramsOf, redact, withTtl } from './cache'
 import type { CacheParams } from './cache'
 import type { Handoff } from '../types'
 
@@ -45,6 +45,17 @@ let handoffTurnId: string | null = null
 let handoffTrigger: { at: number; ageMin: number | null } | null = null
 // This pane's herdr ID when there is one: other sessions look the state file up by it (cache-state.sh).
 let pane: string | null = null
+
+// The one timer: a one-shot for the next moment that matters (see nextWake), never a poll, so an idle session's process
+// sleeps (55 of them on one machine: each wake-up touches its memory, and the OS can never leave it swapped out).
+// While the person is there (an edit, a submit, a turn, a command, a press on the card) it is also awake for the
+// footer's minutes; IDLE_MS after the last of those it sleeps, and the footer's minutes are drawn only when something
+// else repaints it. `isTouched`: input since the timer last looked, so a keystroke costs no clock read.
+const IDLE_MS = 10 * 60_000
+let timer: Timer | null = null
+let isAwake = false
+let isTouched = false
+let sleepAt = 0
 
 // How much of the transcript's end is read: enough for the last responses and a handoff.
 const TAIL_BYTES = 400_000
@@ -121,6 +132,7 @@ async function refreshTtl($: EngineInterface): Promise<void> {
   const { ttlMs } = await readTranscript($)
   if (ttlMs !== null) await update($, cacheTtl, () => ttlMs)
   await writeState($)
+  await schedule($)
 }
 
 /** The flag's params with the transcript's TTL. */
@@ -152,10 +164,43 @@ async function writeState($: EngineInterface): Promise<void> {
   await $.fs.write(`${await claudeDir($)}/ctx/cache/${pane ?? session}.json`, JSON.stringify(state) + '\n').catch(err => $.ui.log(`could not write the cache state: ${String(err).slice(0, 120)}`))
 }
 
+/** The timer fired, or the person is back: the footer is redrawn at the time, the handoff tried if due, the next wake set. */
 async function tick($: EngineInterface): Promise<void> {
   const ms = await $.clock.now()
   await update($, clockMs, () => ms)
   await maybeHandoff($, ms)
+  await schedule($, ms)
+}
+
+/**
+ * Sets the one timer for the next moment that matters from now (nextWake); none when there is no cache to lose, a turn
+ * runs, or it has expired. Called whenever one of those moments moves: a turn, its TTL read, a compaction, a seed.
+ */
+async function schedule($: EngineInterface, at?: number): Promise<void> {
+  const ms = at ?? (await $.clock.now())
+  if (isTouched) {
+    isTouched = false
+    sleepAt = ms + IDLE_MS
+  }
+  if (isAwake && ms >= sleepAt) isAwake = false
+  const { ttlMs, warnMs } = await paramsNow($)
+  const due = nextWake({ now: ms, lastAt: await read($, cacheAt), ttlMs, warnMs, isWorking: await read($, isWorking), leadMs: (await read($, handoffAt)) === null ? handoffLeadMs : null, isAwake })
+  timer?.cancel()
+  timer = due === null ? null : $.clock.after(due - ms, () => {
+    timer = null
+    void tick($).catch(() => {})
+  })
+}
+
+/**
+ * The person is there: awake for the footer's minutes. Cheap while already awake (a keystroke reads no clock); from
+ * asleep, the footer is redrawn at once and its minute timer set.
+ */
+function touch($: EngineInterface): void {
+  isTouched = true
+  if (isAwake) return
+  isAwake = true
+  void tick($).catch(() => {})
 }
 
 /** The git facts for the handoff's header, best effort: branch, short commit, and how many files are changed. */
@@ -208,6 +253,7 @@ async function keepHandoff($: EngineInterface, trigger: { at: number; ageMin: nu
  * answers a pending ask.
  */
 async function settleHeld($: EngineInterface, choice: 'send' | 'clear' | 'handoff' | 'cancel'): Promise<void> {
+  touch($)
   const text = await read($, held)
   const note = await read($, handoff)
   await update($, held, () => null)
@@ -252,6 +298,9 @@ export const register: Register = (on, options) => {
   handoffLeadMs = handoffLeadMsOf(options)
   handoffMinTokens = handoffMinTokensOf(options)
   transcript = null
+  timer = null
+  isAwake = false
+  isTouched = false
 
   // The engine names the transcript at start (and after /clear) and at each main turn's end: kept, so it is not globbed for.
   on('classic.SessionStart', async ($, e, next) => {
@@ -270,8 +319,8 @@ export const register: Register = (on, options) => {
     await writeState($)
     // The state files of panes that are gone, after this pane's own is fresh.
     await pruneStates($, await $.clock.now())
+    // Asleep until the person is there: only the cache's own deadlines wake it.
     await tick($)
-    $.clock.every(15_000, () => void tick($).catch(() => {}))
 
     return next(e)
   })
@@ -280,6 +329,7 @@ export const register: Register = (on, options) => {
   // permissive permission mode with nobody there.
   on('tool.call', async ($, e, next) => {
     if (handoffTurnId !== null) return { deny: 'cache-timer: this turn only writes the handoff note, which the plugin keeps; it uses no tools.' }
+    touch($)
     return next(e)
   })
 
@@ -288,6 +338,7 @@ export const register: Register = (on, options) => {
       isHandoffPending = false
       handoffTurnId = e.turnId
     } else {
+      touch($)
       // Work resumed: a new idle stretch, and a handoff from before it is out of date.
       await update($, handoffAt, () => null)
       await update($, handoff, () => null)
@@ -295,6 +346,8 @@ export const register: Register = (on, options) => {
     await update($, isWorking, () => true)
     await update($, held, () => null)
     await writeState($)
+    // A running turn uses the cache: no timer until it ends.
+    await schedule($)
     return next(e)
   })
 
@@ -306,6 +359,8 @@ export const register: Register = (on, options) => {
     const ms = await $.clock.now()
     await update($, cacheAt, () => ms)
     await update($, clockMs, () => ms)
+    // The handoff's turn is the plugin's own, not the person back.
+    if (handoffTurnId === null || e.turnId !== handoffTurnId) touch($)
     if (handoffTurnId !== null && e.turnId === handoffTurnId) {
       handoffTurnId = null
       if (!e.isAborted && isNoHandoff(e.answer)) $.ui.log('no handoff written: nothing in this session worth resuming')
@@ -314,6 +369,7 @@ export const register: Register = (on, options) => {
       }
     }
     await writeState($)
+    await schedule($)
     // The transcript has the turn's responses once it settles.
     $.clock.after(2000, () => void refreshTtl($).catch(() => {}))
     return result
@@ -327,6 +383,7 @@ export const register: Register = (on, options) => {
       await update($, handoffAt, () => null)
       await update($, handoff, () => null)
       await writeState($)
+      await schedule($)
     }
     return result
   })
@@ -335,6 +392,17 @@ export const register: Register = (on, options) => {
   on('session.end', async ($, e, next) => {
     await update($, handoffAt, () => null)
     await update($, handoff, () => null)
+    await schedule($)
+    return next(e)
+  })
+
+  // The person typing: awake for the footer's minutes. The edit passes as it came.
+  on('prompt.edit', async ($, e, next) => {
+    touch($)
+    return next(e)
+  })
+  on('command.run', async ($, e, next) => {
+    touch($)
     return next(e)
   })
 
@@ -343,6 +411,7 @@ export const register: Register = (on, options) => {
   // Commands, prompts typed over a running turn, any other origin, and ticket or
   // thread sessions (herdr types their prompts: a dialog would stall them) pass.
   on('prompt.submit', async ($, e, next) => {
+    if (e.origin.kind === 'composer') touch($)
     // Commands, prompts over a running turn, and the person's own Remote Control messages pass.
     if (e.turnId !== undefined || e.text.trimStart().startsWith('/') || e.origin.kind === 'bridge') return next(e)
     const at = await read($, cacheAt)
@@ -414,7 +483,8 @@ export const register: Register = (on, options) => {
     const theirs = await next(e)
     const lastAt = !(await read($, isWorking)) ? await read($, cacheAt) : null
     if (lastAt === null) return theirs
-    const cache = cacheState(lastAt, await read($, clockMs), await paramsNow($))
+    // Drawn from the clock, not the last wake: any repaint shows the time left. Reading clockMs redraws it at each wake.
+    const cache = cacheState(lastAt, Math.max(await read($, clockMs), await $.clock.now()), await paramsNow($))
     const { Box, Text } = $.ui.resolve(e)
     return (
       <Box gap={1} flexShrink={0}>

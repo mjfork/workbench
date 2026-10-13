@@ -100,6 +100,23 @@ export function handoffDue(i: { leadMs: number | null; lastAt: number | null; no
   return at > 0 && age >= at && age < i.ttlMs
 }
 
+/**
+ * When an idle session next has something to do, from `now`: turn yellow, write the handoff (`leadMs`: null when off or
+ * already tried this stretch; the long tier only), turn red, and, while the person is there (`isAwake`), the footer's
+ * next minute. Null when there is nothing: no cache to lose, a turn running, or it has expired.
+ */
+export function nextWake(i: { now: number; lastAt: number | null; ttlMs: number; warnMs: number; leadMs: number | null; isWorking: boolean; isAwake: boolean }): number | null {
+  if (i.lastAt === null || i.isWorking) return null
+  const expiresAt = i.lastAt + i.ttlMs
+  const leftMs = expiresAt - i.now
+  const times = [expiresAt - i.warnMs, expiresAt]
+  if (i.leadMs !== null && i.ttlMs > SHORT_TTL_MS && i.leadMs < i.ttlMs) times.push(expiresAt - i.leadMs)
+  // The label is whole minutes, rounded down: it drops a minute just after each one left (`cache 42m` → `cache 41m`).
+  if (i.isAwake && leftMs > 60_000) times.push(expiresAt - Math.floor(leftMs / 60_000) * 60_000 + 1)
+  const later = times.filter(t => t > i.now)
+  return later.length === 0 ? null : Math.min(...later)
+}
+
 /** What a handoff, written by the model from its own warm context, must hold. */
 export const HANDOFF_PROMPT = [
   'Write a handoff note so a fresh session can pick this work up without this conversation. Plain markdown, no preamble, as long as a fresh session needs and no longer (shorter if there is less to say). Leave out any section that would be empty. Sections, in this order:',
