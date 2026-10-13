@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Fill, Kind, PaneReport, Snapshot, TurnRecord } from '../types'
-import { cells, fmt, KINDS, measure } from './measure'
+import { cells, fmt, KINDS, measurer } from './measure'
 
 /** The Claude config folder, as Claude Code itself reads it from CLAUDE_CONFIG_DIR. Unset, it is ~/.claude, where Claude Code keeps it. */
 const claudeDir = async ($: EngineInterface) => {
@@ -54,6 +54,8 @@ const NAME: Record<Kind, string> = {
 }
 
 let pending: { cancel: () => void } | null = null
+// Measures only the messages added since the last refresh; a reload starts it over.
+const measure = measurer()
 
 async function refresh($: EngineInterface) {
   const [messages, usage] = await Promise.all([

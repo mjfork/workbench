@@ -1,6 +1,6 @@
 {
   "name": "ctx-bar",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Color-coded bar at the bottom of the footer's right-hand block, showing what fills the context window by tool; hover a segment for its biggest chunks",
   "author": {
     "name": "Michael Fork"
