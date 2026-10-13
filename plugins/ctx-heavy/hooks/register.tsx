@@ -54,6 +54,14 @@ export function span(ms: number): string {
 const usd = (n: number | null | undefined) => (n === null || n === undefined ? '$?' : `$${n.toFixed(2)}`)
 
 /** The hover card: the session's fill, cost and age, then its last turns, newest first. */
+/**
+ * The rows that can be drawn: each with a pane and its report. Rows come from the shared summary file, or from saved
+ * state that outlives a code update (0.4.1 kept a built card, not the report), so neither is trusted as is.
+ */
+export function drawable(rows: unknown): Heavy[] {
+  return Array.isArray(rows) ? (rows as Heavy[]).filter(row => typeof row?.pane === 'string' && typeof row.report === 'object' && row.report !== null) : []
+}
+
 export function cardOf(report: PaneReport, now: number): string[] {
   const percent = report.window > 0 ? ` (${Math.round((report.tokens / report.window) * 100)}%)` : ''
   const age = report.startedAt === undefined ? '' : `  up ${span(now - report.startedAt)}`
@@ -145,7 +153,7 @@ async function refreshHeavy($: EngineInterface, poller: Poller) {
     let rows: Heavy[]
     if (isHeld) {
       if (!Array.isArray(summary?.rows)) return
-      rows = (summary.rows as Heavy[]).filter(row => typeof row?.pane === 'string' && typeof row.report === 'object' && row.report !== null)
+      rows = drawable(summary.rows)
     } else {
       rows = topSessions(await readReports($, ctxDir, now, poller.seen))
       await $.fs.write(path, JSON.stringify({ pane: poller.me, at: now, rows }) + '\n').catch(() => {})
@@ -183,7 +191,7 @@ export const register: Register = on => {
   // this mod's line goes under it.
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const theirs = await next(e)
-    const top = await read($, heavy)
+    const top = drawable(await read($, heavy))
     if (top.length === 0) return theirs
     const now = await drawnAt($)
 
@@ -225,7 +233,7 @@ export const register: Register = on => {
   // pointer is on a workspace's token count, right-aligned over the footer.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const theirs = await next(e)
-    const top = await read($, heavy)
+    const top = drawable(await read($, heavy))
     if (e.props.hasSurvey || top.length === 0 || e.viewport?.isFullscreen === true) return theirs
     const now = await drawnAt($)
 
