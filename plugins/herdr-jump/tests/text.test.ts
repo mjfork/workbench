@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { rowsOf } from '../hooks/panes'
 import { plainBlock, plainText } from '../hooks/text'
+import { KEY } from './engine'
 
 const ESC = '\u001b'
 // Clears the screen, retitles the window, then hides the rest behind a direction mark.
@@ -30,6 +31,7 @@ test("/jump rows carry herdr's names and titles without terminal codes", () => {
 test("the queue draws another session's ask as text, never as terminal codes", async ($, on) => {
   const queue = [{ pane: 'w8R:p1', workspace: 'w8R', label: `fix${ESC}[2J`, kind: 'ask', ask: `**Ask:** ship it?${ESC}]0;pwned\u0007\n**Reply with:** \`1\``, ts: 1000 }]
   on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/u/.claude', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w8Q', HERDR_PANE_ID: 'w8Q:p1' } as Record<string, string>)[e.name] }))
+  on('prompt.edit', (_$, e) => ({ text: e.text, cursor: e.cursor }) as never)
   on('process.run', (_$, e) => ({ value: { exitCode: 0, stdout: e.argv[2] === 'list' ? JSON.stringify(queue) : '{}', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   on('clock.now', () => ({ value: 1_120_000 }))
   on('clock.every', () => ({ deny: 'no timers' }) as never)
@@ -38,6 +40,7 @@ test("the queue draws another session's ask as text, never as terminal codes", a
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['modes'] }) as never)
   on('ui.open', () => ({ value: { isPlaced: true } }))
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
   await new Promise(r => setTimeout(r, 20))
   const footer = await $.ui.mount({ plugin: 'herdr-jump', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
   await footer.press({ key: 'queue' })

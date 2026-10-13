@@ -1,6 +1,7 @@
 // The kit stamps origin and presentation, as a session does.
 import type { CommandRunInput, On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import { KEY } from './engine'
 
 const LISTS: Record<string, unknown> = {
   workspace: {
@@ -47,6 +48,7 @@ function engine(on: On, failOn: string[] = []): Seen {
   on('command.register', () => ({ value: undefined }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w8Q' } as Record<string, string>)[e.name] }))
+  on('prompt.edit', (_$, e) => ({ text: e.text, cursor: e.cursor }) as never)
   on('process.run', (_$, e) => {
     const [, noun, verb, target] = e.argv
     if (verb === 'focus') {
@@ -166,7 +168,11 @@ for (const surface of ['terminal', 'desktop'] as const) {
 // ---- /jump-back: herdr keeps no focus history, so the mod notes each change of the focused pane.
 const HISTORY = '/home/ubuntu/.claude/ctx/focus/default.json'
 const history = (seen: Seen) => JSON.parse(seen.files[HISTORY]!) as { current: string | null; previous: string | null }
-const start = ($: { session: { start: (e: never) => Promise<unknown> } }) => $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+// Started, then a keystroke: a session polls focus only while awake.
+const start = async ($: { session: { start: (e: never) => Promise<unknown> }; prompt: { edit: (e: never) => Promise<unknown> } }) => {
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
+}
 
 test('the mod notes each change of focus: the pane you were in becomes the previous one', async ($, on) => {
   const seen = engine(on)

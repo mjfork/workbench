@@ -1,4 +1,5 @@
 import type { On } from 'claude-code'
+import { KEY } from './engine'
 import { expect, test } from 'claude-code/testing'
 import { mock } from 'claude-code/testing'
 
@@ -17,6 +18,7 @@ function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }
   const clock = mock.clock(on, { now: 100_000 })
   const env: Record<string, string> = { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HOME: '/home/ubuntu', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
   on('env.get', (_$, e) => ({ value: env[e.name] }))
+  on('prompt.edit', (_$, e) => ({ text: e.text, cursor: e.cursor }) as never)
   on('process.run', (_$, e) => {
     runs.push([...e.argv])
     if (e.argv[0] === 'bash' && e.argv[2] === 'list') {
@@ -50,6 +52,7 @@ function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }
 test('with no lease, this session takes it and polls herdr for focus', async ($, on) => {
   const e = engine(on)
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   expect(e.herdrPolls()).toBe(1)
   expect(JSON.parse(e.files[LEASE]!.text)).toEqual({ pane: 'w9B:p1', at: 100_000 })
@@ -63,6 +66,7 @@ test('with no lease, this session takes it and polls herdr for focus', async ($,
 test("another session's fresh lease: this one does not poll, and takes over once the lease is 5 seconds old", async ($, on) => {
   const e = engine(on, { [LEASE]: { text: JSON.stringify({ pane: 'w1A:p1', at: 99_000 }) } })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   await e.clock.advance(2000)
   await settle()
@@ -77,6 +81,7 @@ test("another session's fresh lease: this one does not poll, and takes over once
 test('the queue poll reads the shared list while it is fresh, and starts the script only once it is stale', async ($, on) => {
   const e = engine(on, { [CACHE]: { text: JSON.stringify(QUEUE), mtimeMs: 98_000 } })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   expect(e.scriptLists()).toBe(0)
   // At 110s the list is 12s old: still fresh. At 115s it is 17s old: past the 15s the script itself serves it for.
@@ -91,6 +96,7 @@ test('the queue poll reads the shared list while it is fresh, and starts the scr
 test('with no shared list yet, or one that does not parse, the poll starts the script', async ($, on) => {
   const e = engine(on, { [CACHE]: { text: '[{"pane": ', mtimeMs: 100_000 } })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   expect(e.scriptLists()).toBe(1)
 })
@@ -98,6 +104,7 @@ test('with no shared list yet, or one that does not parse, the poll starts the s
 test('a slow list does not stack polls: the next poll waits until it is done, and each run has a time limit', async ($, on) => {
   const e = engine(on, {}, { hangList: true })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   expect(e.scriptLists()).toBe(1)
   await e.clock.advance(5000)
@@ -113,6 +120,7 @@ const LOCK = '/home/ubuntu/.herdr-queue/default/.list-lock'
 test("while another session rebuilds the list, the poll starts nothing and keeps the last list", async ($, on) => {
   const e = engine(on, { [CACHE]: { text: JSON.stringify(QUEUE), mtimeMs: 0 }, [LOCK]: { text: '', mtimeMs: 99_000 } })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   await e.clock.advance(5000)
   await settle()
@@ -122,6 +130,7 @@ test("while another session rebuilds the list, the poll starts nothing and keeps
 test('a rebuild lock over 30 seconds old was left by a killed run: the poll starts the script', async ($, on) => {
   const e = engine(on, { [CACHE]: { text: JSON.stringify(QUEUE), mtimeMs: 0 }, [LOCK]: { text: '', mtimeMs: 60_000 } })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   expect(e.scriptLists()).toBe(1)
 })

@@ -1,4 +1,5 @@
 import type { On } from 'claude-code'
+import { KEY } from './engine'
 import { expect, mock, test } from 'claude-code/testing'
 
 // What an idle session costs: ~60 sessions load this mod, so a plain turn should start no process, and a queue that has
@@ -19,6 +20,7 @@ function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }
   const clock = mock.clock(on, { now: 100_000 })
   const env: Record<string, string> = { CLAUDE_CONFIG_DIR: `${HOME}/.claude`, HOME, HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
   on('env.get', (_$, e) => ({ value: env[e.name] }))
+  on('prompt.edit', (_$, e) => ({ text: e.text, cursor: e.cursor }) as never)
   on('process.run', (_$, e) => {
     runs.push([...e.argv])
     const stdout = e.argv[0] === 'bash' && e.argv[2] === 'list' ? JSON.stringify(queue) : '{}'
@@ -53,6 +55,7 @@ function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }
 test('a turn with no Needs-you section and no relayed reply starts no process', async ($, on) => {
   const e = engine(on)
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await $.turn.complete({ ...DONE, answer: 'All done; the tests pass.' } as never)
   await settle()
   expect(e.stops()).toBe(0)
@@ -61,6 +64,7 @@ test('a turn with no Needs-you section and no relayed reply starts no process', 
 test('a turn with a Needs-you section starts the script, whatever the heading level or case', async ($, on) => {
   const e = engine(on)
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await $.turn.complete({ ...DONE, answer: ASK } as never)
   await $.turn.complete({ ...DONE, answer: 'x\n### ⚑   NEEDS YOU\nok?' } as never)
   await settle()
@@ -70,6 +74,7 @@ test('a turn with a Needs-you section starts the script, whatever the heading le
 test('a heading not at the start of its line is not a section: the turn starts nothing', async ($, on) => {
   const e = engine(on)
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await $.turn.complete({ ...DONE, answer: 'Write a "## ⚑ Needs you" section when blocked.' } as never)
   await settle()
   expect(e.stops()).toBe(0)
@@ -78,6 +83,7 @@ test('a heading not at the start of its line is not a section: the turn starts n
 test('a turn with no section but a relayed reply waiting starts the script, which closes the ask', async ($, on) => {
   const e = engine(on, { [REPLIED]: { text: '' } })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await $.turn.complete({ ...DONE, answer: 'Done as you said.' } as never)
   await settle()
   expect(e.stops()).toBe(1)
@@ -86,6 +92,7 @@ test('a turn with no section but a relayed reply waiting starts the script, whic
 test('an empty answer starts the script: it may find the text in the transcript', async ($, on) => {
   const e = engine(on)
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await $.turn.complete({ ...DONE, answer: '' } as never)
   await settle()
   expect(e.stops()).toBe(1)
@@ -96,6 +103,7 @@ const ITEM = { pane: 'w8R:p1', workspace: 'w8R', label: 'x', kind: 'ask', ask: '
 test('an unchanged empty queue on repeated polls writes no state and draws no footer again', async ($, on) => {
   const e = engine(on, { [CACHE]: { text: '[]', mtimeMs: 100_000 } })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   await $.ui.mount({ plugin: 'herdr-jump', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
   const [writes, draws] = [e.writes.length, e.draws()]
@@ -112,6 +120,7 @@ test('an unchanged queue of old asks writes nothing until its shown age changes'
   // The ask is 99,990s old: shown as 27h, which stays the same across these polls.
   const e = engine(on, { [CACHE]: { text: JSON.stringify([ITEM]), mtimeMs: 100_000 } })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   const writes = e.writes.length
   for (let i = 0; i < 3; i++) {
@@ -125,6 +134,7 @@ test('an unchanged queue of old asks writes nothing until its shown age changes'
 test('a queue that changes is written', async ($, on) => {
   const e = engine(on, { [CACHE]: { text: '[]', mtimeMs: 100_000 } })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   e.files[CACHE] = { text: JSON.stringify([ITEM]), mtimeMs: 105_000 }
   await e.clock.advance(5000)
@@ -135,6 +145,7 @@ test('a queue that changes is written', async ($, on) => {
 test('a fresh ask shown in seconds keeps its age current: the time is written as the shown age moves', async ($, on) => {
   const e = engine(on, { [CACHE]: { text: JSON.stringify([{ ...ITEM, ts: 99 }]), mtimeMs: 100_000 } })
   await $.session.start(START)
+  await $.prompt.edit(KEY)
   await settle()
   const nows = e.writes.filter(k => k === 'now').length
   e.files[CACHE]!.mtimeMs = 105_000

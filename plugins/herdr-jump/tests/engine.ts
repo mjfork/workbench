@@ -27,3 +27,6 @@ export const DONE = { reason: 'answer', answer: 'ok', durationMs: 1, isAborted: 
 export const PLUGIN = (text: string) => ({ text, origin: { kind: 'plugin', name: 'cache-timer' }, wait: false }) as never
 export const PEER = (text: string) => ({ text, origin: { kind: 'peer' }, wait: false }) as never
 export const PLUGIN_AS_USER = (text: string) => ({ text, origin: { kind: 'plugin', name: 'cache-timer', asUser: true }, wait: false }) as never
+
+/** A keystroke in the prompt box: the person's first input, which wakes a session's polls (they start asleep). */
+export const KEY = { origin: { kind: 'composer' }, text: '', cursor: 0, start: 0, end: 0, inputText: 'x' } as never

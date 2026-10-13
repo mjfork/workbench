@@ -1,4 +1,5 @@
 import type { On } from 'claude-code'
+import { KEY } from './engine'
 import { expect, test } from 'claude-code/testing'
 
 import { wrap } from '../hooks/register'
@@ -13,6 +14,7 @@ const QUEUE = [
 function engine(on: On) {
   const runs: string[][] = []
   on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w8Q' } as Record<string, string>)[e.name] }))
+  on('prompt.edit', (_$, e) => ({ text: e.text, cursor: e.cursor }) as never)
   on('process.run', (_$, e) => {
     runs.push([...e.argv])
     const stdout = e.argv[2] === 'list' ? JSON.stringify(QUEUE) : '{}'
@@ -29,6 +31,7 @@ function engine(on: On) {
 test('footer lists the first three waiting workspaces; a click jumps there', async ($, on) => {
   const runs = engine(on)
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
   await new Promise(r => setTimeout(r, 20))
   const footer = await $.ui.mount({ plugin: 'herdr-jump', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
   await footer.press({ key: 'top-w6N:p7' })
@@ -43,6 +46,7 @@ test('wrap keeps line breaks and splits long words', () => {
 test('fullscreen: hovering a waiting ID floats its ask above the footer', async ($, on) => {
   engine(on)
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
   await new Promise(r => setTimeout(r, 20))
   const full = { columns: 200, rows: 50, isFullscreen: true }
   const footer = await $.ui.mount({ plugin: 'herdr-jump', surface: 'terminal', component: 'SessionMode', props: { modes: [] }, viewport: full })
@@ -69,6 +73,7 @@ const COUNTDOWN = {
 test('the footer keeps what the mods beneath draw while the queue has items', { plugins: [COUNTDOWN] }, async ($, on) => {
   engine(on)
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
   await new Promise(r => setTimeout(r, 20))
   const footer = await $.ui.mount({ plugin: 'herdr-jump', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
   expect(await footer.find({ text: /cache 42m/ })).toBeDefined()
@@ -78,6 +83,7 @@ test('the footer keeps what the mods beneath draw while the queue has items', { 
 test('the footer lists as many waiting panes as fit the context bar width, and +N stands for the rest', async ($, on) => {
   engine(on)
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+  await $.prompt.edit(KEY)
   await new Promise(r => setTimeout(r, 20))
   const footer = await $.ui.mount({ plugin: 'herdr-jump', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
   // Four wait; in the 14 columns left after the toggle, `herdr w8Q` and the count, two fit with room for the +2.
