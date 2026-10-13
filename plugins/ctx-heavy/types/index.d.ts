@@ -31,12 +31,12 @@ export type Heavy = {
   pane: string
   workspace: string
   tokens: number
-  /** The hover card's lines, written when the reports were read. */
-  card: string[]
+  /** The pane's report, its turns cut to those the card shows; the card is drawn from it, its ages from the clock. */
+  report: PaneReport
 }
 
 declare module 'claude-code' {
   interface PluginState {
-    'ctx-heavy': { heavy: Heavy[] }
+    'ctx-heavy': { heavy: Heavy[]; tick: number }
   }
 }

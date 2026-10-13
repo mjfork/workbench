@@ -13,16 +13,16 @@ const ROWS = [
 ]
 
 test('ranks the heaviest sessions, however many share a workspace, and colors by size', () => {
-  const top = topSessions(ROWS.map(r => ({ ...r, card: [] })))
+  const top = topSessions(ROWS.map(r => ({ ...r, report: { ...r, window: 1_000_000, at: 0, isEnded: false } })))
   expect(top.map(r => r.pane)).toEqual(['w6A:p1', 'w6A:p2', 'w71:p1', 'w67:p1'])
   expect([heat(500_001), heat(500_000), heat(300_001), heat(300_000)]).toEqual(['red', 'yellow', 'yellow', 'white'])
 })
 
 test('a report reads as a row unless ended or cut mid-write', () => {
   const report = { pane: 'w6A:p1', workspace: 'w6A', tokens: 703_931, window: 1_000_000, at: 1, isEnded: false }
-  expect(rowOf(JSON.stringify(report), 0)).toMatchObject({ pane: 'w6A:p1', workspace: 'w6A', tokens: 703_931 })
-  expect(rowOf(JSON.stringify({ ...report, isEnded: true }), 0)).toBeNull()
-  expect(rowOf('{"pane":"w6A', 0)).toBeNull()
+  expect(rowOf(JSON.stringify(report))).toMatchObject({ pane: 'w6A:p1', workspace: 'w6A', tokens: 703_931 })
+  expect(rowOf(JSON.stringify({ ...report, isEnded: true }))).toBeNull()
+  expect(rowOf('{"pane":"w6A')).toBeNull()
 })
 
 test('the card shows the fill, cost and age, then the last turns newest first', () => {
@@ -62,6 +62,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     }))
     on('fs.read', (_$, e) => ({ value: files[e.path.split('/').at(-1) ?? '']?.text ?? '' }))
     on('clock.every', () => ({ deny: 'no timers' }) as never)
+    on('fs.write', () => ({ value: undefined }) as never)
     on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
     // Stands for herdr-jump's line, the one this mod runs ahead of.
     on('ui.render', { component: 'SessionMode' }, ($, e) => {
