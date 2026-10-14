@@ -112,6 +112,7 @@ Change them in `/config`, or in `settings.json` under `pluginConfigs["<plugin>"]
 | | `handoffMinTokens` | 200000 (0 = any) | Smaller sessions get no handoff: rebuilding them costs little |
 | `ctx-heavy` | `show` | `both` | What each session shows after its pane: `context` (its size), `cache` (time left, from `cache-timer`) or `both` |
 | | `order` | `context` | Which sessions, in what order: `context` (biggest first) or `cache` (warm caches closest to expiring first, then the rest) |
+| | `expired` | `hide` | `hide` lists only sessions whose cache is still warm (or in use); `show` lists them all. Sessions without `cache-timer` are always listed |
 
 The cache lifetime (1 hour or 5 minutes) is read from the transcript. The other plugins have no settings.
 
