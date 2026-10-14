@@ -14,7 +14,7 @@ It does not run:
 - for a session under `handoffMinTokens` of context (rebuilding a small context costs little)
 - when the model decides the session holds nothing worth resuming (it replies `NO HANDOFF` and nothing is kept)
 
-It is on by default. Set `handoffLeadMinutes` to 0 to turn it off.
+It is off by default: Claude Code's auto-compact already keeps long sessions going. Set `handoffLeadMinutes` to a positive number of minutes (10 is a good choice) to turn it on.
 
 ## What the note holds
 
