@@ -72,17 +72,23 @@ once, **3** when `memory_pressure | tail -1` shows under 25% free or `sysctl -n 
 tab=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --label lane-a --no-focus)
 pane=$(printf '%s' "$tab" | jq -r '.result.root_pane.pane_id')
 herdr agent start lane-a --kind claude --pane "$pane" -- --worktree lane-a
+turn-mode.sh lane-a agentic --driver "$HERDR_PANE_ID"
 herdr agent prompt lane-a "/superpowers:subagent-driven-development docs/plans/x.lane-a.md
 You are lane A of plan docs/plans/x.md, in your own worktree. Only the tasks in the lane file. Do not start other
-sessions or tabs. When done: commit on your branch and end with RESULT: done | RESULT: blocked: <why>."
+sessions or tabs. When done: commit on your branch."
 ```
+
+`turn-mode.sh … agentic` marks the worker as yours, not the person's: each turn ends on one status line (`DONE`,
+`BLOCKED: <why>` or `NEEDS-INPUT: <why>`), its asks come to this pane instead of the person's queue, and ctx-heavy
+leaves it out of their footer. Hand a tab back (`turn-mode.sh lane-a async`) only if the person
+takes it over.
 
 Use the skill the person chose for the job (`/mattpocock-skills:implement <tickets>` works the same way). The prompt
 carries the slash command, the lane file path, and those three rules; nothing pasted from your context.
 
 ## 4. Keep your own context thin
 
-- **Never read a worker's transcript.** Read its lane ledger, its `RESULT:` line
+- **Never read a worker's transcript.** Read its lane ledger, its status line
   (`herdr agent read lane-a --source recent-unwrapped --lines 30`), and `git log --oneline` / `git diff --stat` of its
   branch. Pull detail only to settle a specific problem.
 - **Wait in bounded stretches:** `herdr agent wait lane-a --timeout 600000`, one status line between stretches.
