@@ -25,7 +25,7 @@
     },
     {
       "name": "ctx-heavy",
-      "description": "Second footer line under herdr-jump: the heaviest herdr sessions by context, wherever they are, click one to go there",
+      "description": "Second footer line under herdr-jump: your herdr sessions, wherever they are, each with its context size and prompt cache time left (from cache-timer), click one to go there; settings pick what a row shows and whether the biggest or the closest to expiring come first",
       "source": "./plugins/ctx-heavy",
       "category": "productivity"
     },
@@ -37,7 +37,7 @@
     },
     {
       "name": "cache-timer",
-      "description": "Footer countdown of the main prompt cache (yellow near expiry, red once expired); a confirm card before a prompt re-sends an expired cache at full price; writes a handoff note shortly before the cache expires, so a new session can resume from it; writes each pane's cache state for cache-state.sh",
+      "description": "Footer countdown of the main prompt cache (yellow near expiry, red once expired); a confirm card before a prompt re-sends an expired cache at full price; optionally writes a handoff note shortly before the cache expires (off by default), so a new session can resume from it; writes each pane's cache state for cache-state.sh",
       "source": "./plugins/cache-timer",
       "category": "productivity"
     }

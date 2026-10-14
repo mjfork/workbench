@@ -26,6 +26,9 @@ export type PaneReport = {
   turns?: TurnRecord[]
 }
 
+/** A pane's prompt cache, as cache-timer's state file gives it: when it expires (null: no cache yet), its TTL, and whether a turn is using it. */
+export type PaneCache = { expiresAt: number | null; ttlMs: number; isWorking: boolean }
+
 /** One herdr pane and the context its Claude session holds. */
 export type Heavy = {
   pane: string
@@ -33,6 +36,8 @@ export type Heavy = {
   tokens: number
   /** The pane's report, its turns cut to those the card shows; the card is drawn from it, its ages from the clock. */
   report: PaneReport
+  /** Its cache, when cache-timer runs there; absent in a summary written before ctx-heavy carried it. */
+  cache?: PaneCache
 }
 
 declare module 'claude-code' {

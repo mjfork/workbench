@@ -35,7 +35,8 @@ function engine(on: On, files: Record<string, File>) {
   const env: Record<string, string> = { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HOME: '/home/ubuntu', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
   on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('fs.list', (_$, e) => {
-    lists.push(e.path ?? '')
+    // A poll lists three folders (reports, modes, caches): counted once, by the reports'.
+    if (e.path === CTX) lists.push(e.path)
     const dir = `${e.path}/`
     const entries = Object.entries(files)
       .filter(([path]) => path.startsWith(dir) && !path.slice(dir.length).includes('/'))
@@ -292,4 +293,35 @@ test("a press on one of this mod's rows wakes it", async ($, on) => {
   await settle()
   expect(e.lists.length).toBe(lists + 1)
   await ui.unmount()
+})
+
+// Only the person's own panes are listed: one an agent drives (turn-mode's agentic, as an orchestrator sets its
+// workers) is left out, and the next heaviest takes its place. Each row carries its cache from cache-timer's state.
+
+test('a pane an agent drives is left out; each row carries its cache, and the footer shows its time left', async ($, on) => {
+  const files = reports()
+  files[`${CTX}/mode/w6A:p1.json`] = { text: JSON.stringify({ pane: 'w6A:p1', mode: 'agentic', driver: 'w9B:p1', setBy: 'agent', at: NOW }), mtimeMs: NOW }
+  files[`${CTX}/mode/w6A:p2.json`] = { text: JSON.stringify({ pane: 'w6A:p2', mode: 'realtime', driver: null, setBy: 'human', at: NOW }), mtimeMs: NOW }
+  files[`${CTX}/cache/w6A:p2.json`] = { text: JSON.stringify({ pane: 'w6A:p2', expiresAt: NOW + 31 * 60_000 + 5000, ttlMs: 3_600_000, isWorking: false }), mtimeMs: NOW }
+  files[`${CTX}/cache/w71:p1.json`] = { text: JSON.stringify({ pane: 'w71:p1', expiresAt: NOW + 4 * 60_000 + 5000, ttlMs: 3_600_000, isWorking: false }), mtimeMs: NOW }
+  files[`${CTX}/cache/w67:p1.json`] = { text: JSON.stringify({ pane: 'w67:p1', expiresAt: NOW + 50 * 60_000, ttlMs: 3_600_000, isWorking: true }), mtimeMs: NOW }
+  const e = engine(on, files)
+  await started($)
+  const summary = JSON.parse(e.files[SUMMARY]!.text) as { rows: { pane: string; cache?: unknown }[] }
+  expect(summary.rows.map(r => r.pane)).toEqual(['w6A:p2', 'w71:p1', 'w67:p1', 'w8P:p1'])
+  expect(summary.rows[0]!.cache).toEqual({ expiresAt: NOW + 31 * 60_000 + 5000, ttlMs: 3_600_000, isWorking: false })
+
+  const ui = await $.ui.mount({ plugin: 'ctx-heavy', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
+  expect(await ui.find({ key: 'go-w6A:p1' })).toBeUndefined()
+  expect(await ui.find({ text: / 31m$/ })).toBeDefined()
+  expect(await ui.find({ text: / 4m$/ })).toBeDefined()
+  // Mid-turn (w67:p1, 50 minutes left): no time.
+  expect(await ui.find({ text: / 50m$/ })).toBeUndefined()
+  await ui.unmount()
+
+  // The orchestrator hands the pane back (async): it is listed again on the next poll.
+  files[`${CTX}/mode/w6A:p1.json`] = { text: JSON.stringify({ pane: 'w6A:p1', mode: 'async', driver: null, setBy: 'human', at: NOW + 5000 }), mtimeMs: NOW + 5000 }
+  await e.clock.advance(10_000)
+  await settle()
+  expect((JSON.parse(e.files[SUMMARY]!.text) as { rows: { pane: string }[] }).rows[0]!.pane).toBe('w6A:p1')
 })
