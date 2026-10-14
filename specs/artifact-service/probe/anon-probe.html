@@ -1,0 +1,33 @@
+<title>Anon Probe</title>
+<style>
+:root { --bg:#fff; --fg:#111; --mut:#666 }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#111; --fg:#eee; --mut:#999; color-scheme: dark } }
+:root[data-theme="dark"] { --bg:#111; --fg:#eee; --mut:#999; color-scheme: dark }
+body { background:var(--bg); color:var(--fg); font:13px/1.45 ui-monospace,monospace; padding-block:16px; padding-inline:16px; max-width:760px }
+h1 { font-size:18px } p { color:var(--mut) }
+pre { white-space:pre-wrap; word-break:break-all; border:1px solid var(--mut); padding:12px; border-radius:6px }
+</style>
+<h1>Anon Probe</h1>
+<p>Throwaway page for testing link sharing. It records only what this viewer is allowed to use. Copy the box below.</p>
+<pre id="out">Collecting…</pre>
+<script>
+(async () => {
+  const T0 = performance.now(); const R = {};
+  const red = s => String(s).replace(/([?&#][^=&]+=)[^&#]*/g, '$1~').replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, 'UUID');
+  R.origin = location.origin.replace(/^https:\/\/[^.]+/, 'https://UUID'); R.path = red(location.pathname).replace(/\/_f\/[^/]+\//, '/_f/VER/');
+  R.ancestors = location.ancestorOrigins ? [...location.ancestorOrigins].map(red) : null;
+  const st = {}; try { localStorage.setItem('p', '1'); st.local = 'ok' } catch (e) { st.local = e.name } try { document.cookie = 'p=1'; st.cookie = document.cookie ? 'ok' : 'empty' } catch (e) { st.cookie = e.name }
+  R.storage = st;
+  const caps = {}; const names = ['user', 'db', 'comments', 'room', 'artifact', 'assets', 'downloads', 'sample', 'permissions'];
+  if (window.claude && claude.use) await Promise.all(names.map(async n => { const t = performance.now(); try { const ns = await claude.use(n); caps[n] = (ns === null ? 'null' : 'ok:' + Object.keys(ns).length + 'keys') + ' ' + Math.round(performance.now() - t) + 'ms' } catch (e) { caps[n] = 'throws ' + e.name } }));
+  else caps.none = 'window.claude missing';
+  R.caps = caps;
+  try { const u = await claude.use('user'); if (u) R.user = { isOwner: await u.isOwner(), canEdit: await u.canEdit(), canWrite: await u.can('data.write'), me: (x => x && { guest: x.guest, hasId: !!x.id, kind: x.kind })(await u.me()) } } catch (e) { R.user = 'err ' + e.name + ' ' + (e.code || '') }
+  try { const p = await claude.use('permissions'); if (p) R.perm = await p.state() } catch (e) { R.perm = 'err ' + e.name }
+  try { const db = await claude.use('db'); if (db) { const s = await db.collection('anon').doc('d').get(); R.dbRead = s && s.exists !== undefined ? 'exists=' + s.exists : 'read ok'; try { await db.collection('anon').doc('w').set({ at: Date.now() }); R.dbWrite = 'ok' } catch (e) { R.dbWrite = 'rejected ' + (e.code || e.name) } } } catch (e) { R.dbRead = 'rejected ' + (e.code || e.name) }
+  try { const rm = await claude.use('room'); if (rm) { const peers = []; rm.onPeers(p => peers.push(p.map(x => ({ self: x.self, guest: x.guest, kind: x.kind })))); rm.presence({ anon: 1 }); await new Promise(r => setTimeout(r, 2500)); R.roomPeers = peers.slice(-1)[0] || 'none' } } catch (e) { R.roomPeers = 'err ' + (e.code || e.name) }
+  R.resources = performance.getEntriesByType('resource').map(r => r.initiatorType + ' ' + red(r.name).replace(/^https:\/\/[^.]+\.frame/, 'https://UUID.frame').slice(0, 110));
+  R.ms = Math.round(performance.now() - T0);
+  document.getElementById('out').textContent = JSON.stringify(R, null, 1);
+})();
+</script>

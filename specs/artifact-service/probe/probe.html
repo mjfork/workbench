@@ -1,0 +1,87 @@
+<title>Runtime Probe</title>
+<link rel="stylesheet" href="probe.css">
+<style>
+:root { --bg:#fff; --fg:#111 }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#111; --fg:#eee; color-scheme: dark } }
+:root[data-theme="dark"] { --bg:#111; --fg:#eee; color-scheme: dark }
+body { background:var(--bg); color:var(--fg); font:13px/1.4 ui-monospace,monospace; padding-block:16px; padding-inline:16px }
+pre { white-space:pre-wrap; word-break:break-all }
+</style>
+<h1>Runtime Probe</h1>
+<p id="st">Collecting (v3)…</p>
+<pre id="out"></pre>
+<script src="ext.js"></script>
+<script>
+(async () => {
+  const T0 = performance.now();
+  const R = {}; const msgs = []; const csp = [];
+  const red = s => String(s).replace(/([?&#][^=&]+=)[^&#]*/g, '$1<R>').replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<UUID>');
+  const shape = (v, d = 0) => { if (d > 4) return '…'; if (Array.isArray(v)) return v.length ? [shape(v[0], d + 1), 'len=' + v.length] : []; if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v).slice(0, 40)) o[k] = shape(v[k], d + 1); return o; } if (typeof v === 'string') return v.length > 60 ? 'str(' + v.length + '):' + red(v.slice(0, 60)) : red(v); if (typeof v === 'function') return 'fn/' + v.length; return v; };
+  addEventListener('message', e => { if (msgs.length < 60) msgs.push({ t: Math.round(performance.now() - T0), origin: red(e.origin), src: e.source === parent ? 'parent' : e.source === window ? 'self' : String(!!e.source), ports: e.ports.length, data: shape(e.data) }); });
+  document.addEventListener('securitypolicyviolation', e => { if (csp.length < 40) csp.push({ dir: e.violatedDirective, eff: e.effectiveDirective, uri: red(e.blockedURI), disp: e.disposition, policy: e.originalPolicy }); });
+
+  R.location = { origin: location.origin, path: red(location.pathname), search: red(location.search), hash: location.hash };
+  R.referrer = red(document.referrer); R.name = shape((() => { try { return JSON.parse(window.name) } catch { return window.name } })());
+  R.ancestorOrigins = location.ancestorOrigins ? [...location.ancestorOrigins].map(red) : null;
+  R.isSecure = isSecureContext; R.crossOriginIsolated = crossOriginIsolated;
+  R.html = red(document.documentElement.outerHTML.split('<h1>Runtime Probe')[0]).slice(0, 20000);
+  R.tailHtml = red(document.documentElement.outerHTML.split('<\/script>').slice(-3).join('<\/script>')).slice(-4000);
+  R.scripts = [...document.scripts].map(s => ({ src: red(s.src), type: s.type, len: s.textContent.length, id: s.id, attrs: [...s.attributes].map(a => a.name) }));
+  R.globals = Object.getOwnPropertyNames(window).filter(k => /claude|anthropic|frame|__|hot|artifact/i.test(k));
+  R.claudeShape = shape(window.claude);
+  R.hot = shape(window.claude && window.claude.hot);
+  try { R.featurePolicy = document.featurePolicy ? document.featurePolicy.allowedFeatures() : null } catch (e) { R.featurePolicy = 'err ' + e }
+  // storage
+  const st = {}; try { localStorage.setItem('p', '1'); st.local = localStorage.getItem('p') } catch (e) { st.local = 'throws ' + e.name }
+  try { sessionStorage.setItem('p', '1'); st.session = sessionStorage.getItem('p') } catch (e) { st.session = 'throws ' + e.name }
+  try { document.cookie = 'p=1'; st.cookie = document.cookie } catch (e) { st.cookie = 'throws ' + e.name }
+  try { st.idb = typeof indexedDB.open('p') } catch (e) { st.idb = 'throws ' + e.name }
+  try { st.caches = typeof caches } catch (e) { st.caches = 'throws' }
+  st.sw = 'serviceWorker' in navigator; try { await navigator.serviceWorker.register('ext.js'); st.swReg = 'ok' } catch (e) { st.swReg = e.name + ': ' + e.message }
+  R.storage = st;
+  // dialogs + popups
+  const dl = {}; try { dl.confirm = confirm('x') } catch (e) { dl.confirm = 'throws ' + e.name } try { dl.prompt = prompt('x') } catch (e) { dl.prompt = 'throws ' + e.name }
+  try { dl.open = String(window.open('https://example.com')) } catch (e) { dl.open = 'throws ' + e.name } try { dl.print = typeof print } catch (e) { }
+  R.dialogs = dl;
+  // headers of own doc and published files
+  const hdr = async (u, opt) => { try { const r = await fetch(u, opt); const t = await r.text(); return { status: r.status, url: red(r.url), redirected: r.redirected, type: r.type, headers: Object.fromEntries([...r.headers].map(([k, v]) => [k, red(v).slice(0, 3000)])), len: t.length, head: red(t.slice(0, 300)) } } catch (e) { return 'ERR ' + e.name + ': ' + e.message } };
+  R.selfDoc = await hdr(location.href, { credentials: 'include' });
+  R.files = { css: await hdr('probe.css'), json: await hdr('data.json'), js: await hdr('ext.js'), sub: await hdr('sub/page.html'), missing: await hdr('nope.txt'), root: await hdr('/'), warmup: await hdr('/_warmup'), blob: await hdr('/_blob/00000000000000000000000000000000'), index: await hdr('index.html'), manifest: await hdr('/_manifest.json') };
+  // CSP probes
+  R.fetchProbe = { example: await hdr('https://example.com/'), cdnjs: await hdr('https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js'), claudeApi: await hdr('https://claude.ai/api/account', { credentials: 'include' }), apiAnthropic: await hdr('https://api.anthropic.com/v1/models') };
+  const tryScript = u => new Promise(res => { const s = document.createElement('script'); s.src = u; s.onload = () => res('load'); s.onerror = () => res('error'); document.head.appendChild(s); setTimeout(() => res('timeout'), 6000) });
+  R.scriptProbe = { cdnjs: await tryScript('https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js'), jsdelivr: await tryScript('https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js'), unpkg: await tryScript('https://unpkg.com/lodash@4.17.21/lodash.min.js'), esm: await tryScript('https://esm.sh/lodash@4.17.21'), unpinned: await tryScript('https://cdn.jsdelivr.net/npm/lodash/lodash.min.js'), github: await tryScript('https://raw.githubusercontent.com/lodash/lodash/main/lodash.js') };
+  const tryImg = u => new Promise(res => { const i = new Image(); i.onload = () => res('load'); i.onerror = () => res('error'); i.src = u; setTimeout(() => res('timeout'), 6000) });
+  R.imgProbe = { wiki: await tryImg('https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png'), data: await tryImg('data:image/gif;base64,R0lGODlhAQABAAAAACw='), cdnjsImg: await tryImg('https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f600.png') };
+  try { const ws = new WebSocket('wss://echo.websocket.events'); R.ws = await new Promise(r => { ws.onopen = () => r('open'); ws.onerror = () => r('error'); setTimeout(() => r('timeout'), 5000) }) } catch (e) { R.ws = 'throws ' + e.name }
+  try { new Worker(URL.createObjectURL(new Blob(['postMessage(1)'], { type: 'text/javascript' }))); R.blobWorker = 'ok' } catch (e) { R.blobWorker = 'throws ' + e.name }
+  try { eval('1'); R.eval = 'ok' } catch (e) { R.eval = 'throws ' + e.name }
+  try { R.wasm = typeof WebAssembly.compile; await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); R.wasm = 'ok' } catch (e) { R.wasm = 'throws ' + e.name }
+  try { await navigator.clipboard.writeText('x'); R.clipboardNoGesture = 'ok' } catch (e) { R.clipboardNoGesture = e.name }
+  try { R.geo = (await navigator.permissions.query({ name: 'geolocation' })).state } catch (e) { R.geo = 'err ' + e.name }
+  // capabilities
+  const caps = {}; const names = ['db', 'user', 'artifact', 'self', 'assets', 'comments', 'downloads', 'room', 'sample', 'permissions', 'mcp', 'files', 'bogus'];
+  if (window.claude && claude.use) {
+    await Promise.all(names.map(async n => { const t = performance.now(); try { const ns = await claude.use(n); caps[n] = { ms: Math.round(performance.now() - t), ns: ns === null ? null : shape(ns), frozen: ns ? Object.isFrozen(ns) : null } } catch (e) { caps[n] = 'throws ' + e.name + ': ' + e.message } }));
+  }
+  R.caps = caps;
+  try { const p = await claude.use('permissions'); R.permState = p && await p.state() } catch (e) { R.permState = 'err ' + e }
+  try { const u = await claude.use('user'); R.userInfo = u && { isOwner: await u.isOwner(), canEdit: await u.canEdit(), canWrite: await u.can('data.write'), idShape: String(await u.id()).replace(/[A-Za-z0-9]/g, 'x') } } catch (e) { R.userInfo = 'err ' + e }
+  try { const a = await claude.use('assets'); R.assetList = a && shape(await a.list()) } catch (e) { R.assetList = 'err ' + e.name + ' ' + (e.code || '') + ' ' + e.message }
+  try { const rm = await claude.use('room'); if (rm) { const peers = []; rm.onPeers(p => peers.push(shape(p))); rm.presence({ probe: 1 }); await new Promise(r => setTimeout(r, 2500)); R.roomPeers = peers.slice(-2) } } catch (e) { R.roomPeers = 'err ' + e.name + ' ' + (e.code || '') + ' ' + e.message }
+  await new Promise(r => setTimeout(r, 3000));
+  R.msgs = msgs; R.csp = csp;
+  R.resources = performance.getEntriesByType('resource').map(r => r.initiatorType + ' ' + Math.round(r.startTime) + ' ' + red(r.name).slice(0, 160));
+  R.elapsedMs = Math.round(performance.now() - T0);
+  // persist via db in chunks
+  const out = JSON.stringify(R, null, 1); document.getElementById('out').textContent = out.slice(0, 20000);
+  try {
+    const db = await claude.use('db');
+    if (!db) throw new Error('db null');
+    const keys = Object.keys(R); const groups = {};
+    keys.forEach((k, i) => { const g = 'g' + Math.floor(i / 6); (groups[g] = groups[g] || {})[k] = JSON.stringify(R[k]) });
+    for (const [g, v] of Object.entries(groups)) await db.collection('probe').doc(g).set(v);
+    document.getElementById('st').textContent = 'Saved ' + Object.keys(groups).length + ' docs';
+  } catch (e) { document.getElementById('st').textContent = 'Save failed: ' + e.name + ' ' + (e.code || '') + ' ' + e.message }
+})();
+</script>
