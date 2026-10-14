@@ -123,7 +123,7 @@ test('holding the lease, a poll reads only the reports that changed since it las
 
 test("another session's fresh summary: this one reads that file alone, once per poll, and shows its rows", async ($, on) => {
   const files = reports()
-  const held = { pane: 'w1A:p1', at: NOW - 1000, rows: [{ pane: 'w5Z:p1', workspace: 'w5Z', tokens: 420_000, report: JSON.parse(report('w5Z:p1', 420_000)) }] }
+  const held = { pane: 'w1A:p1', at: NOW - 1000, pick: 'context/hide', rows: [{ pane: 'w5Z:p1', workspace: 'w5Z', tokens: 420_000, report: JSON.parse(report('w5Z:p1', 420_000)) }] }
   files[SUMMARY] = { text: JSON.stringify(held), mtimeMs: NOW - 1000 }
   const e = engine(on, files)
   await started($)

@@ -44,13 +44,27 @@ export const heat = (tokens: number) => (tokens > 500_000 ? 'red' : tokens > 300
 /** What each row shows after its pane (`show`), and what picks and orders the rows (`order`), from the userConfig. */
 export type Show = 'both' | 'context' | 'cache'
 export type Order = 'context' | 'cache'
-export function settingsOf(raw: unknown): { show: Show; order: Order } {
-  const o = (raw ?? {}) as { show?: unknown; order?: unknown }
+export function settingsOf(raw: unknown): { show: Show; order: Order; expired: 'hide' | 'show' } {
+  const o = (raw ?? {}) as { show?: unknown; order?: unknown; expired?: unknown }
   return {
     show: o.show === 'context' || o.show === 'cache' ? o.show : 'both',
     order: o.order === 'cache' ? 'cache' : 'context',
+    expired: o.expired === 'show' ? 'show' : 'hide',
   }
 }
+
+/**
+ * Whether a row's cache is still warm: a turn is using it, or it expires later than now. A session with no cache yet,
+ * or one that has run out, is not; one cache-timer does not run in (no cache known) counts as warm, since nothing says
+ * otherwise.
+ */
+export function isWarm(row: Heavy, now: number): boolean {
+  const c = row.cache
+  return c === undefined || c.isWorking || (c.expiresAt !== null && c.expiresAt > now)
+}
+
+/** The rows the `expired` setting lets through. */
+const kept = (rows: readonly Heavy[], now: number) => (settings.expired === 'show' ? [...rows] : rows.filter(row => isWarm(row, now)))
 let settings = settingsOf(undefined)
 
 /** When a row's cache runs out, for ordering: a warm cache no turn is using, else never (nothing to save by going there). */
@@ -208,7 +222,7 @@ async function poll($: EngineInterface, w: Waker) {
   }
 }
 
-type Summary = { pane?: unknown; at?: unknown; order?: unknown; rows?: unknown }
+type Summary = { pane?: unknown; at?: unknown; pick?: unknown; rows?: unknown }
 
 /**
  * The holder's read of one folder's JSON files: lists it, and reads only a file that is new or changed since its last
@@ -282,18 +296,20 @@ async function refreshHeavy($: EngineInterface, poller: Poller) {
       summary = null
     }
     const isHeld = summary !== null && summary.pane !== poller.me && typeof summary.at === 'number' && now - summary.at < HEAVY_LEASE_MS
-    const { order } = settings
+    // How the rows are picked; the summary names it, so a session picking another way does not draw the holder's rows.
+    const { order, expired } = settings
+    const pick = `${order}/${expired}`
     let rows: Heavy[]
-    if (isHeld && (summary?.order ?? 'context') === order) {
+    if (isHeld && summary?.pick === pick) {
       if (!Array.isArray(summary?.rows)) return
       rows = drawable(summary.rows)
     } else if (isHeld) {
-      // The holder picks rows by another order (a session from before the setting changed): read the reports here,
-      // without taking its lease.
-      rows = topSessions(await readReports($, ctxDir, now, poller.seen), HEAVY_COUNT, order, now)
+      // The holder picks rows another way (a session from before a setting changed): read the reports here, without
+      // taking its lease.
+      rows = topSessions(kept(await readReports($, ctxDir, now, poller.seen), now), HEAVY_COUNT, order, now)
     } else {
-      rows = topSessions(await readReports($, ctxDir, now, poller.seen), HEAVY_COUNT, order, now)
-      await $.fs.write(path, JSON.stringify({ pane: poller.me, at: now, order, rows }) + '\n').catch(() => {})
+      rows = topSessions(kept(await readReports($, ctxDir, now, poller.seen), now), HEAVY_COUNT, order, now)
+      await $.fs.write(path, JSON.stringify({ pane: poller.me, at: now, pick, rows }) + '\n').catch(() => {})
     }
     await show($, rows, now)
   } finally {
@@ -359,9 +375,10 @@ export const register: Register = (on, options) => {
   // this mod's line goes under it.
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const theirs = await next(e)
-    const top = drawable(await read($, heavy))
-    if (top.length === 0) return theirs
+    // A cache can run out between polls, or while every session sleeps and the rows stay as last drawn.
     const now = await drawnAt($)
+    const top = kept(drawable(await read($, heavy)), now)
+    if (top.length === 0) return theirs
 
     const go = async (row: Heavy) => {
       noteInput($)
@@ -408,9 +425,9 @@ export const register: Register = (on, options) => {
   // pointer is on a workspace's token count, right-aligned over the footer.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const theirs = await next(e)
-    const top = drawable(await read($, heavy))
-    if (e.props.hasSurvey || top.length === 0 || e.viewport?.isFullscreen === true) return theirs
     const now = await drawnAt($)
+    const top = kept(drawable(await read($, heavy)), now)
+    if (e.props.hasSurvey || top.length === 0 || e.viewport?.isFullscreen === true) return theirs
 
     const { Box, Text } = $.ui.resolve(e)
     const rows = Math.max(1, e.props.maxRows)

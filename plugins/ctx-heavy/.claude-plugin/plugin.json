@@ -1,6 +1,6 @@
 {
   "name": "ctx-heavy",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Second footer line under herdr-jump: your heaviest herdr sessions by context, wherever they are, each with its prompt cache's time left (from cache-timer), click one to go there; settings pick what a row shows (context, cache or both) and the order (biggest, or closest to expiring); sessions an agent drives (turn-mode agentic) are left out",
   "author": {
     "name": "Michael Fork"
@@ -23,6 +23,13 @@
       "description": "context: the biggest contexts first. cache: the warm caches closest to expiring first, then the rest, biggest first.",
       "options": ["context", "cache"],
       "default": "context"
+    },
+    "expired": {
+      "type": "string",
+      "title": "Sessions whose cache has expired",
+      "description": "hide: list only sessions whose prompt cache is still warm (or in use by a turn). show: list them all. Sessions cache-timer does not run in are always listed.",
+      "options": ["hide", "show"],
+      "default": "hide"
     }
   },
   "dependencies": [

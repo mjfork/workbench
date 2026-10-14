@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { RenderPropsOf } from 'claude-code'
-import { cacheLeft, cardOf, heat, isDriven, rowOf, settingsOf, span, topSessions } from '../hooks/register'
+import { cacheLeft, cardOf, heat, isDriven, isWarm, rowOf, settingsOf, span, topSessions } from '../hooks/register'
 
 const ROWS = [
   { pane: 'w6A:p1', workspace: 'w6A', tokens: 703_931 },
@@ -57,8 +57,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     files['w99:p1.json'] = { text: JSON.stringify({ pane: 'w99:p1', workspace: 'w99', tokens: 900_000, window: 1_000_000, at: NOW, isEnded: true }), mtimeMs: NOW }
     files['w98:p1.json'] = { text: JSON.stringify({ pane: 'w98:p1', workspace: 'w98', tokens: 950_000, window: 1_000_000, at: 0, isEnded: false }), mtimeMs: 0 }
     on('clock.now', () => ({ value: NOW }))
-    on('fs.list', () => ({
-      value: Object.entries(files).map(([name, f]) => ({ name, kind: 'file' as const, size: f.text.length, mtimeMs: f.mtimeMs, isLink: false })),
+    // The reports sit in ctx itself; its mode and cache folders are empty here.
+    on('fs.list', (_$, e) => ({
+      value: !e.path.endsWith('/ctx') ? [] : Object.entries(files).map(([name, f]) => ({ name, kind: 'file' as const, size: f.text.length, mtimeMs: f.mtimeMs, isLink: false })),
     }))
     on('fs.read', (_$, e) => ({ value: files[e.path.split('/').at(-1) ?? '']?.text ?? '' }))
     on('clock.every', () => ({ deny: 'no timers' }) as never)
@@ -136,10 +137,10 @@ test('the time left: dim while warm, yellow in the last quarter of its TTL (at m
   expect([isDriven('{"mode":"agentic","driver":"w1:p1"}'), isDriven('{"mode":"async"}'), isDriven('{"mo')]).toEqual([true, false, false])
 })
 
-test('settings: unset or unknown values fall back to both, biggest first', () => {
-  expect(settingsOf(undefined)).toEqual({ show: 'both', order: 'context' })
-  expect(settingsOf({ show: 'cache', order: 'cache' })).toEqual({ show: 'cache', order: 'cache' })
-  expect(settingsOf({ show: 'nope', order: 'size' })).toEqual({ show: 'both', order: 'context' })
+test('settings: unset or unknown values fall back to both, biggest first, expired hidden', () => {
+  expect(settingsOf(undefined)).toEqual({ show: 'both', order: 'context', expired: 'hide' })
+  expect(settingsOf({ show: 'cache', order: 'cache', expired: 'show' })).toEqual({ show: 'cache', order: 'cache', expired: 'show' })
+  expect(settingsOf({ show: 'nope', order: 'size', expired: 'maybe' })).toEqual({ show: 'both', order: 'context', expired: 'hide' })
 })
 
 test('by cache: warm caches closest to expiring first, then the rest biggest first', () => {
@@ -199,3 +200,59 @@ for (const show of ['context', 'cache'] as const) {
     await ui.unmount()
   })
 }
+
+for (const expired of ['hide', 'show'] as const) {
+  test(`expired ${expired}: ${expired === 'hide' ? 'only warm caches are listed' : 'every session is listed'}`, { options: { expired } }, async ($, on) => {
+    const NOW = 100 * 24 * 3600 * 1000
+    const dir = '/home/ubuntu/.claude/ctx'
+    const report = (pane: string, tokens: number) => JSON.stringify({ pane, workspace: pane.split(':')[0], tokens, window: 1_000_000, at: NOW, isEnded: false })
+    const cache = (expiresAt: number | null, isWorking = false) => JSON.stringify({ expiresAt, ttlMs: 3_600_000, isWorking })
+    const files: Record<string, string> = {
+      [`${dir}/warm:p1.json`]: report('warm:p1', 300_000),
+      [`${dir}/cold:p1.json`]: report('cold:p1', 900_000),
+      [`${dir}/fresh:p1.json`]: report('fresh:p1', 800_000),
+      [`${dir}/busy:p1.json`]: report('busy:p1', 200_000),
+      [`${dir}/plain:p1.json`]: report('plain:p1', 100_000),
+      [`${dir}/cache/warm:p1.json`]: cache(NOW + 20 * 60_000),
+      [`${dir}/cache/cold:p1.json`]: cache(NOW - 60_000),
+      [`${dir}/cache/fresh:p1.json`]: cache(null),
+      [`${dir}/cache/busy:p1.json`]: cache(NOW - 60_000, true),
+    }
+    on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1' } as Record<string, string>)[e.name] }))
+    on('clock.now', () => ({ value: NOW }))
+    on('fs.list', (_$, e) => ({
+      value: Object.keys(files).filter(p => p.startsWith(`${e.path}/`) && !p.slice(e.path.length + 1).includes('/'))
+        .map(p => ({ name: p.slice(e.path.length + 1), kind: 'file' as const, size: files[p]!.length, mtimeMs: NOW - 1000, isLink: false })),
+    }))
+    on('fs.read', (_$, e) => {
+      if (files[e.path] === undefined) throw new Error('ENOENT')
+      return { value: files[e.path]! }
+    })
+    on('clock.every', () => ({ deny: 'no timers' }) as never)
+    on('fs.write', () => ({ value: undefined }) as never)
+    on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+    on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
+    on('ui.render', { component: 'SessionMode' }, ($, e) => $.ui.resolve(e).Text({ children: ['herdr w9B'] }))
+
+    await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+    await $.turn.start({ text: 'hi', turnId: 't1' })
+    await new Promise(r => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(() => r(undefined), 20))
+    const ui = await $.ui.mount({ plugin: 'ctx-heavy', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
+    const listed = async (pane: string) => (await ui.find({ key: `go-${pane}` })) !== undefined
+    // Warm, in use by a turn, and with no cache-timer file: never hidden as expired (the last, smallest of five, falls
+    // past the four rows when nothing is hidden).
+    expect([await listed('warm:p1'), await listed('busy:p1'), await listed('plain:p1')]).toEqual([true, true, expired === 'hide'])
+    // Expired, and no cache yet: listed only when expired ones are shown.
+    expect([await listed('cold:p1'), await listed('fresh:p1')]).toEqual(expired === 'show' ? [true, true] : [false, false])
+    await ui.unmount()
+  })
+}
+
+test('a cache is warm while a turn uses it or until it expires; unknown counts as warm', () => {
+  const row = (cache?: { expiresAt: number | null; isWorking: boolean }) => ({ pane: 'w1:p1', workspace: 'w1', tokens: 1, report: {} as never, ...(cache && { cache: { ttlMs: 3_600_000, ...cache } }) })
+  expect(isWarm(row({ expiresAt: 2, isWorking: false }), 1)).toBe(true)
+  expect(isWarm(row({ expiresAt: 1, isWorking: false }), 1)).toBe(false)
+  expect(isWarm(row({ expiresAt: null, isWorking: false }), 1)).toBe(false)
+  expect(isWarm(row({ expiresAt: 0, isWorking: true }), 1)).toBe(true)
+  expect(isWarm(row(), 1)).toBe(true)
+})
