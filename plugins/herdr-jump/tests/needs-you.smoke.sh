@@ -101,4 +101,21 @@ echo "$ask" | ny stop
 [ "$(stamp)" = "$fresh" ] || fail "the same ask again leaves the shared list fresh"
 echo "$other" | ny stop
 [ "$(stamp)" != "$fresh" ] || fail "a new ask marks the shared list stale"
+# A dialog in a pane an agent drives: its owner is the driver, told once per stretch; it stays in the person's queue.
+stale() { touch -t 200001010000 "$cache"; }
+listed_owner() { ny list | jq -r '.[] | select(.pane=="w8:p3" and .kind=="blocked") | .owner // "none"'; }
+dialogs() { sleep 0.3; grep -c "turn-mode dialog" "$tmp/prompted" || true; }
+stale; [ "$(listed_owner)" = w8:p2 ] || fail "a dialog no agent drives keeps the first-tab owner"
+[ "$(dialogs)" = 0 ] || fail "no driver, no one is told"
+echo '{"pane":"w8:p3","mode":"agentic","driver":"w9:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p3.json"
+stale; [ "$(listed_owner)" = w9:p1 ] || fail "a driven pane's dialog is owned by its driver, and still listed"
+[ "$(dialogs)" = 1 ] || fail "the driver is told of the dialog"
+grep "turn-mode dialog" "$tmp/prompted" | grep -q "send-keys w8:p3" || fail "the driver is told how to answer it"
+stale; ny list >/dev/null
+[ "$(dialogs)" = 1 ] || fail "the driver is told once per stretch"
+echo '{"pane":"w8:p3","mode":"agentic","driver":"w7:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p3.json"
+stale; [ "$(listed_owner)" = w8:p2 ] || fail "a driver that is not a live agent is not the owner"
+[ "$(dialogs)" = 1 ] || fail "a driver that is not live is not told"
+test ! -e "$tmp/.herdr-queue/t/.dialog-w8_p3" || fail "the stretch ends when no live driver has the dialog"
+rm -f "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p3.json"
 echo "needs-you.sh: all checks passed"
