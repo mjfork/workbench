@@ -62,6 +62,27 @@ route_to_driver() {
   run_timeout 15 "$herdr" agent prompt "$driver" "$text" >/dev/null 2>&1 && log "routed ask to driver $driver" && printf '%s' "$sig" > "$marker"
 }
 
+# Tells each driver, once per stretch, that a pane it drives is stuck on a dialog: only a key press in that pane clears
+# it, and the driver can send one (herdr agent send-keys). The pane stays in the person's queue meanwhile, so it is
+# still seen if the driver is not there. `$1`: {blocked pane: driver}. A marker per pane holds the stretch; it goes once
+# the pane is no longer blocked. Sent in the background: the list rebuild does not wait on a busy driver.
+wake_drivers() {
+  local f p d text
+  for f in "$dir"/.dialog-*; do
+    [ -e "$f" ] || continue
+    p=$(cat "$f"); jq -e --arg p "$p" 'has($p)' <<<"$1" >/dev/null || rm -f "$f"
+  done
+  for p in $(jq -r 'keys[]' <<<"$1"); do
+    f="$dir/.dialog-${p//:/_}"
+    [ -e "$f" ] && continue
+    printf '%s' "$p" > "$f"
+    d=$(jq -r --arg p "$p" '.[$p]' <<<"$1")
+    text=$(printf '[turn-mode dialog] %s, which you drive, is stuck on a permission prompt or question dialog. Read it with herdr agent read %s --source recent-unwrapped --lines 40, then answer it with herdr agent send-keys %s if it is one you would approve yourself; otherwise escalate to %s in your own ## ⚑ Needs you section. It stays in their queue until it is answered.' "$p" "$p" "$p" "$person")
+    log "tells driver $d of dialog in $p"
+    ( run_timeout 15 "$herdr" agent prompt "$d" "$text" >/dev/null 2>&1 || log "driver $d not told of dialog in $p" ) &
+  done
+}
+
 case "${1:-}" in
 stop)
   [ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ] || exit 0
@@ -156,15 +177,23 @@ list)
     jq -e --arg p "$p" 'index($p) != null' <<<"$live" >/dev/null || { log "list drops $p"; rm -f "$f"; }
   done
   asks=$(cat "$dir"/*.json 2>/dev/null | jq -s -c '.') || asks='[]'
-  # A blocked pane still shows here, labelled with who owns it: the agent in its workspace's first tab, unless it is
-  # that agent, which makes it top-level.
-  jq -n -c --argjson asks "$asks" --argjson agents "$agents" --argjson spaces "$spaces" '
+  # A blocked pane an agent drives (turn-mode agentic) is the driver's: its driver, when that is a live agent.
+  drivers='{}'
+  for p in $(jq -r '.[] | select(.agent_status == "blocked") | .pane_id' <<<"$agents"); do
+    d=$(driver_of "$p")
+    [ -n "$d" ] && [ "$d" != "$p" ] && jq -e --arg d "$d" 'index($d) != null' <<<"$live" >/dev/null 2>&1 &&
+      drivers=$(jq -c --arg p "$p" --arg d "$d" '. + {($p): $d}' <<<"$drivers")
+  done
+  wake_drivers "$drivers"
+  # A blocked pane still shows here, labelled with who owns it: its driver, else the agent in its workspace's first tab,
+  # unless it is that agent, which makes it top-level.
+  jq -n -c --argjson asks "$asks" --argjson agents "$agents" --argjson spaces "$spaces" --argjson drivers "$drivers" '
     ($agents | map(.pane_id)) as $live
     | def owner:
         . as $ag
         | (first($agents[] | select(.workspace_id == $ag.workspace_id and .tab_id == "\($ag.workspace_id):t1")
                  | .pane_id) // null) as $first
-        | {owner: (if $first == null or $first == $ag.pane_id then null else $first end)};
+        | {owner: ($drivers[$ag.pane_id] // (if $first == null or $first == $ag.pane_id then null else $first end))};
       def blocked_text($o):
         if $o.owner then "Blocked on a permission prompt or question dialog in this pane. Owner: \($o.owner)."
         else "Waiting on a permission prompt or question dialog in this pane." end;
