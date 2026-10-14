@@ -101,8 +101,9 @@ carries the slash command, the lane file path, and those three rules; nothing pa
 - cockpit's ctx-bar writes each session's context size to `$CLAUDE_CONFIG_DIR/ctx/<pane>.json` (`tokens`, `window`).
   Check it instead of asking. A worker over about 60% that is between tasks and idle: send `/compact`.
 - A finished lane's tab is a warm session: for the next queued lane, `herdr agent prompt lane-a "/clear"`, then send
-  the new lane's prompt. No startup, no new process. Close a tab (`herdr tab close <tab_id>`) only when nothing is
-  queued for it.
+  the new lane's prompt. No startup, no new process.
+- **Close aggressively:** once nothing is queued for a tab or pane, close it (`herdr tab close <tab_id>`,
+  `herdr pane close <pane_id>`); idle ones waste resources. Close only what you created.
 
 ## 6. Merge and finish
 
