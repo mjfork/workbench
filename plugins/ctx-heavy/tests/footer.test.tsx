@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { RenderPropsOf } from 'claude-code'
-import { cardOf, heat, rowOf, span, topSessions } from '../hooks/register'
+import { cacheLeft, cardOf, heat, isDriven, rowOf, settingsOf, span, topSessions } from '../hooks/register'
 
 const ROWS = [
   { pane: 'w6A:p1', workspace: 'w6A', tokens: 703_931 },
@@ -119,6 +119,83 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(runs).toContainEqual(['herdr', 'agent', 'focus', 'w71:p1'])
     await ui.press({ key: 'go-w6A:p2' })
     expect(runs).toContainEqual(['herdr', 'agent', 'focus', 'w6A:p2'])
+    await ui.unmount()
+  })
+}
+
+test('the time left: dim while warm, yellow in the last quarter of its TTL (at most 15 minutes), none mid-turn, before a cache or once expired', () => {
+  const at = (min: number, extra: Partial<{ ttlMs: number; isWorking: boolean }> = {}) => ({ expiresAt: min * 60_000, ttlMs: 3_600_000, isWorking: false, ...extra })
+  expect(cacheLeft(at(31), 0)).toEqual({ label: '31m', color: undefined })
+  expect(cacheLeft(at(14), 0)).toEqual({ label: '14m', color: 'yellow' })
+  expect(cacheLeft(at(0.5), 0)).toEqual({ label: '<1m', color: 'yellow' })
+  expect(cacheLeft(at(2, { ttlMs: 300_000 }), 0)).toEqual({ label: '2m', color: undefined })
+  expect(cacheLeft(at(31, { isWorking: true }), 0)).toBeNull()
+  expect(cacheLeft({ expiresAt: null, ttlMs: 3_600_000, isWorking: false }, 0)).toBeNull()
+  expect(cacheLeft(at(-1), 0)).toBeNull()
+  expect(cacheLeft(undefined, 0)).toBeNull()
+  expect([isDriven('{"mode":"agentic","driver":"w1:p1"}'), isDriven('{"mode":"async"}'), isDriven('{"mo')]).toEqual([true, false, false])
+})
+
+test('settings: unset or unknown values fall back to both, biggest first', () => {
+  expect(settingsOf(undefined)).toEqual({ show: 'both', order: 'context' })
+  expect(settingsOf({ show: 'cache', order: 'cache' })).toEqual({ show: 'cache', order: 'cache' })
+  expect(settingsOf({ show: 'nope', order: 'size' })).toEqual({ show: 'both', order: 'context' })
+})
+
+test('by cache: warm caches closest to expiring first, then the rest biggest first', () => {
+  const now = 1_000_000
+  const cache = (min: number | null, isWorking = false) => ({ expiresAt: min === null ? null : now + min * 60_000, ttlMs: 3_600_000, isWorking })
+  const rows = [
+    { pane: 'big:p1', tokens: 900_000 },
+    { pane: 'soon:p1', tokens: 100_000, cache: cache(3) },
+    { pane: 'later:p1', tokens: 200_000, cache: cache(40) },
+    { pane: 'busy:p1', tokens: 800_000, cache: cache(1, true) },
+    { pane: 'gone:p1', tokens: 50_000, cache: cache(-5) },
+    { pane: 'none:p1', tokens: 700_000, cache: cache(null) },
+  ].map(r => ({ ...r, workspace: r.pane.split(':')[0], report: { pane: r.pane, workspace: '', tokens: r.tokens, window: 1_000_000, at: 0, isEnded: false } }))
+  expect(topSessions(rows, 4, 'cache', now).map(r => r.pane)).toEqual(['soon:p1', 'later:p1', 'big:p1', 'busy:p1'])
+  expect(topSessions(rows, 4, 'context', now).map(r => r.pane)).toEqual(['big:p1', 'busy:p1', 'none:p1', 'later:p1'])
+})
+
+for (const show of ['context', 'cache'] as const) {
+  test(`show ${show}: each row draws only its ${show === 'context' ? 'size' : 'time left'}`, { options: { show } }, async ($, on) => {
+    const NOW = 100 * 24 * 3600 * 1000
+    const dir = '/home/ubuntu/.claude/ctx'
+    const files: Record<string, string> = {
+      [`${dir}/w1:p1.json`]: JSON.stringify({ pane: 'w1:p1', workspace: 'w1', tokens: 600_000, window: 1_000_000, at: NOW, isEnded: false }),
+      [`${dir}/w2:p1.json`]: JSON.stringify({ pane: 'w2:p1', workspace: 'w2', tokens: 400_000, window: 1_000_000, at: NOW, isEnded: false }),
+      [`${dir}/cache/w1:p1.json`]: JSON.stringify({ expiresAt: NOW + 31 * 60_000, ttlMs: 3_600_000, isWorking: false }),
+    }
+    on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1' } as Record<string, string>)[e.name] }))
+    on('clock.now', () => ({ value: NOW }))
+    on('fs.list', (_$, e) => ({
+      value: Object.keys(files).filter(p => p.startsWith(`${e.path}/`) && !p.slice(e.path.length + 1).includes('/'))
+        .map(p => ({ name: p.slice(e.path.length + 1), kind: 'file' as const, size: files[p]!.length, mtimeMs: NOW - 1000, isLink: false })),
+    }))
+    on('fs.read', (_$, e) => {
+      if (files[e.path] === undefined) throw new Error('ENOENT')
+      return { value: files[e.path]! }
+    })
+    on('clock.every', () => ({ deny: 'no timers' }) as never)
+    on('fs.write', () => ({ value: undefined }) as never)
+    on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+    on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
+    on('ui.render', { component: 'SessionMode' }, ($, e) => $.ui.resolve(e).Text({ children: ['herdr w9B'] }))
+
+    await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
+    await $.turn.start({ text: 'hi', turnId: 't1' })
+    await new Promise(r => (globalThis as unknown as { setTimeout: (f: () => void, ms: number) => void }).setTimeout(() => r(undefined), 20))
+    const ui = await $.ui.mount({ plugin: 'ctx-heavy', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
+    expect(await ui.find({ key: 'go-w1:p1' })).toBeDefined()
+    if (show === 'context') {
+      expect(await ui.find({ text: / 600k/ })).toBeDefined()
+      expect(await ui.find({ text: / 31m/ })).toBeUndefined()
+    } else {
+      expect(await ui.find({ text: / 600k/ })).toBeUndefined()
+      expect(await ui.find({ text: / 31m/ })).toBeDefined()
+      // No warm cache: a dim dash keeps the row hoverable.
+      expect(await ui.find({ text: / –/ })).toBeDefined()
+    }
     await ui.unmount()
   })
 }

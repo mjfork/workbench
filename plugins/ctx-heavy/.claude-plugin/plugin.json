@@ -1,7 +1,7 @@
 {
   "name": "ctx-heavy",
-  "version": "0.5.0",
-  "description": "Second footer line under herdr-jump: the heaviest herdr sessions by context, wherever they are, click one to go there",
+  "version": "0.7.0",
+  "description": "Second footer line under herdr-jump: your heaviest herdr sessions by context, wherever they are, each with its prompt cache's time left (from cache-timer), click one to go there; settings pick what a row shows (context, cache or both) and the order (biggest, or closest to expiring); sessions an agent drives (turn-mode agentic) are left out",
   "author": {
     "name": "Michael Fork"
   },
@@ -9,6 +9,22 @@
   "homepage": "https://github.com/mjfork/workbench",
   "repository": "https://github.com/mjfork/workbench",
   "types": "./types/index.d.ts",
+  "userConfig": {
+    "show": {
+      "type": "string",
+      "title": "What each session shows",
+      "description": "After its pane ID: its context size, its prompt cache's time left (from cache-timer), or both.",
+      "options": ["both", "context", "cache"],
+      "default": "both"
+    },
+    "order": {
+      "type": "string",
+      "title": "Which sessions, in what order",
+      "description": "context: the biggest contexts first. cache: the warm caches closest to expiring first, then the rest, biggest first.",
+      "options": ["context", "cache"],
+      "default": "context"
+    }
+  },
   "dependencies": [
     "herdr-jump"
   ]

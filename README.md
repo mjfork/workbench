@@ -11,9 +11,9 @@ Know how full the context is, what filled it, when the cache dies, and which of 
 </div>
 
 ```
-   cache 42m  herdr w8Q:p3  ⚑ 2  w6N:p7  w8R   ← cache-timer · herdr-jump: this pane, who is waiting on you
-async  w6A:p1 704k  w8N:p2 412k  w8Q:p3 233k   ← turn-mode · ctx-heavy: your heaviest sessions
-      $1.60 ████████████░░░░░░░░  359k/1000k   ← ctx-bar: what fills the context (hover a color)
+         cache 42m  herdr w8Q:p3  ⚑ 2  w6N:p7  w8R   ← cache-timer · herdr-jump: this pane, who is waiting on you
+async  w6A:p1 704k 31m  w8N:p2 412k 4m  w8Q:p3 233k   ← turn-mode · ctx-heavy: your heaviest sessions, cache left
+            $1.60 ████████████░░░░░░░░  359k/1000k   ← ctx-bar: what fills the context (hover a color)
 ```
 
 ## Install (30 seconds)
@@ -31,7 +31,7 @@ async  w6A:p1 704k  w8N:p2 412k  w8Q:p3 233k   ← turn-mode · ctx-heavy: your 
 
 ## Try it
 
-1. Leave a big session idle for an hour. Before the cache expires, `cache-timer` writes a handoff note. Come back, type, and pick **Resume from handoff**.
+1. Set `handoffLeadMinutes` to 10, then leave a big session idle for an hour. Before the cache expires, `cache-timer` writes a handoff note. Come back, type, and pick **Resume from handoff**.
 2. Hover the bar's biggest color. That's what to stop reading into context.
 3. End a turn in another pane with a `## ⚑ Needs you` section. Watch `⚑ 1` appear here, then click it.
 
@@ -45,7 +45,7 @@ Long sessions fail in boring, expensive ways. Each plugin fixes one.
 
 A cached prompt is billed at a tenth of the input price. After an hour idle the cache is gone, and your next "ok, continue" re-sends 600k tokens at full price. You find out on the bill.
 
-**`cache-timer`** counts the cache down in the footer (yellow in the last quarter, red once expired). It stops a prompt that would re-send an expired cache and asks first. And just before expiry, it has the model write a [handoff note](docs/handoff.md), so you can resume in a fresh context for a fraction of the cost.
+**`cache-timer`** counts the cache down in the footer (yellow in the last quarter, red once expired). It stops a prompt that would re-send an expired cache and asks first. Optionally (off by default, since Claude Code's auto-compact covers long sessions), it has the model write a [handoff note](docs/handoff.md) just before expiry, so you can resume in a fresh context for a fraction of the cost.
 
 ### 2. You can't see what's filling the context
 
@@ -57,9 +57,9 @@ A cached prompt is billed at a tenth of the input price. After an hour idle the 
 
 With a dozen sessions across workspaces, one of them has been sitting on a question for twenty minutes, and you're in another pane.
 
-**`herdr-jump`** keeps a queue of every pane that ended its turn with a `## ⚑ Needs you` section or is stuck on a permission dialog. `⚑ N` in the footer, one click to go there, `/needs-me-next` to work through them, `/jump` to go anywhere by name, `/jump-back` to return.
+**`herdr-jump`** keeps a queue of every pane that ended its turn with a `## ⚑ Needs you` section or is stuck on a permission dialog. A session another agent drives (turn-mode's agentic) sends its asks to that driver instead; a dialog it is stuck on stays in your queue, owned by the driver, which is told so it can answer it first. `⚑ N` in the footer, one click to go there, `/needs-me-next` to work through them, `/jump` to go anywhere by name, `/jump-back` to return.
 
-**`ctx-heavy`** lists your heaviest sessions anywhere in herdr, so the one about to compact isn't a surprise.
+**`ctx-heavy`** lists your heaviest sessions anywhere in herdr, each with its cache's time left, so the one about to compact or go cold isn't a surprise. Sessions an agent drives (turn-mode's agentic, as `/cockpit:orchestrate` sets its workers) are left out: these are the places you might need to go.
 
 ### 4. Turns end the wrong way
 
@@ -74,7 +74,7 @@ Sometimes you want a summary and a clear ask. Sometimes you're watching and want
 | `cockpit` | Installs the five below, plus `/cockpit:orchestrate`: process management for implementation skills: independent lanes run in parallel Herdr tabs, one worktree each, driven from your window | herdr, for four of them |
 | `cache-timer` | Cache countdown, expired-cache confirm card, [handoff note](docs/handoff.md) | nothing |
 | `ctx-bar` | Context bar by tool; hover cards; `/ctxbar` | herdr, `ctx-heavy` |
-| `ctx-heavy` | Heaviest sessions across herdr; click to go | herdr, `herdr-jump`; shows sessions that run `ctx-bar` |
+| `ctx-heavy` | Your heaviest sessions across herdr, with cache time left; click to go | herdr, `herdr-jump`; shows sessions that run `ctx-bar`; cache times from `cache-timer`; skips `turn-mode` agentic sessions |
 | `herdr-jump` | Pane label; needs-you queue (`⚑ N`, `/needs-me`, `/needs-me-next`); `/jump`, `/jump-back` | herdr, `bash`, `jq` |
 | `turn-mode` | How a turn ends: async, real-time or agentic | herdr, `ctx-bar` |
 
@@ -108,8 +108,10 @@ Change them in `/config`, or in `settings.json` under `pluginConfigs["<plugin>"]
 
 | Plugin | Setting | Default | Meaning |
 |---|---|---|---|
-| `cache-timer` | `handoffLeadMinutes` | 10 (0 = off) | Minutes before expiry that the [handoff](docs/handoff.md) runs |
+| `cache-timer` | `handoffLeadMinutes` | 0 (off; e.g. 10 to turn it on) | Minutes before expiry that the [handoff](docs/handoff.md) runs |
 | | `handoffMinTokens` | 200000 (0 = any) | Smaller sessions get no handoff: rebuilding them costs little |
+| `ctx-heavy` | `show` | `both` | What each session shows after its pane: `context` (its size), `cache` (time left, from `cache-timer`) or `both` |
+| | `order` | `context` | Which sessions, in what order: `context` (biggest first) or `cache` (warm caches closest to expiring first, then the rest) |
 
 The cache lifetime (1 hour or 5 minutes) is read from the transcript. The other plugins have no settings.
 

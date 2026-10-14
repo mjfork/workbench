@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Heavy, PaneReport } from '../types'
+import type { Heavy, PaneCache, PaneReport } from '../types'
 
 /** The Claude config folder, as Claude Code itself reads it from CLAUDE_CONFIG_DIR. Unset, it is ~/.claude, where Claude Code keeps it. */
 const claudeDir = async ($: EngineInterface) => {
@@ -41,9 +41,32 @@ export const fmt = (tokens: number): string =>
 /** Red over 500k, yellow over 300k, white otherwise. */
 export const heat = (tokens: number) => (tokens > 500_000 ? 'red' : tokens > 300_000 ? 'yellow' : 'white')
 
-/** The heaviest sessions, however many share a workspace; each is shown by its full pane ID. */
-export function topSessions(rows: readonly Heavy[], count = HEAVY_COUNT): Heavy[] {
-  return [...rows].sort((a, b) => b.tokens - a.tokens).slice(0, count)
+/** What each row shows after its pane (`show`), and what picks and orders the rows (`order`), from the userConfig. */
+export type Show = 'both' | 'context' | 'cache'
+export type Order = 'context' | 'cache'
+export function settingsOf(raw: unknown): { show: Show; order: Order } {
+  const o = (raw ?? {}) as { show?: unknown; order?: unknown }
+  return {
+    show: o.show === 'context' || o.show === 'cache' ? o.show : 'both',
+    order: o.order === 'cache' ? 'cache' : 'context',
+  }
+}
+let settings = settingsOf(undefined)
+
+/** When a row's cache runs out, for ordering: a warm cache no turn is using, else never (nothing to save by going there). */
+const expiryOf = (row: Heavy, now: number) => {
+  const c = row.cache
+  return c !== undefined && !c.isWorking && c.expiresAt !== null && c.expiresAt > now ? c.expiresAt : Infinity
+}
+
+/**
+ * The rows to show, however many share a workspace; each is shown by its full pane ID. By context: the heaviest first.
+ * By cache: the warm caches closest to expiring first, then the rest, heaviest first.
+ */
+export function topSessions(rows: readonly Heavy[], count = HEAVY_COUNT, order: Order = 'context', now = 0): Heavy[] {
+  const byTokens = (a: Heavy, b: Heavy) => b.tokens - a.tokens
+  const compare = order === 'cache' ? (a: Heavy, b: Heavy) => expiryOf(a, now) - expiryOf(b, now) || byTokens(a, b) : byTokens
+  return [...rows].sort(compare).slice(0, count)
 }
 
 const TURNS_SHOWN = 5
@@ -83,6 +106,45 @@ export function cardOf(report: PaneReport, now: number): string[] {
   ]
 }
 
+/**
+ * Whether a pane is driven by another agent, from its turn-mode file (ctx/mode/<pane>.json): agentic means an orchestrator
+ * or another pane runs it, so it is not one of the person's own and is not listed. No file is async: the person's.
+ */
+export function isDriven(text: string): boolean {
+  try {
+    return (JSON.parse(text) as { mode?: unknown }).mode === 'agentic'
+  } catch {
+    return false
+  }
+}
+
+/** A pane's prompt cache from cache-timer's state file (ctx/cache/<pane>.json); null when unreadable. */
+export function cacheOf(text: string): PaneCache | null {
+  try {
+    const s = JSON.parse(text) as { expiresAt?: unknown; ttlMs?: unknown; isWorking?: unknown }
+    return {
+      expiresAt: typeof s.expiresAt === 'number' ? s.expiresAt : null,
+      ttlMs: typeof s.ttlMs === 'number' ? s.ttlMs : 60 * 60_000,
+      isWorking: s.isWorking === true,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The cache's time left for the row, as cache-timer draws its own: dim while warm, yellow in the last quarter of its TTL
+ * (at most 15 minutes). Null while a turn uses it, before there is one, and once it has expired: then there is nothing
+ * left to save by going there.
+ */
+export function cacheLeft(cache: PaneCache | undefined, now: number): { label: string; color: 'yellow' | undefined } | null {
+  if (cache === undefined || cache.isWorking || cache.expiresAt === null) return null
+  const leftMs = cache.expiresAt - now
+  if (leftMs <= 0) return null
+  const label = leftMs < 60_000 ? '<1m' : `${Math.floor(leftMs / 60_000)}m`
+  return { label, color: leftMs <= Math.min(15 * 60_000, cache.ttlMs / 4) ? 'yellow' : undefined }
+}
+
 /** One report's file text as a row, or null when ended or unreadable (a write in flight). Keeps only the turns the card shows. */
 export function rowOf(text: string): Heavy | null {
   try {
@@ -95,11 +157,14 @@ export function rowOf(text: string): Heavy | null {
   }
 }
 
-/** One report file as the holder last read it: the row is reused while the file's mtime and size stay the same. */
-type Seen = { mtimeMs: number; size: number; row: Heavy | null }
+/** One file as the holder last read it: its value is reused while the file's mtime and size stay the same. */
+type Seen<T> = { mtimeMs: number; size: number; value: T | null }
 
-/** What one session keeps between polls: who it is, the reports it has read, and whether a poll is still running. */
-type Poller = { me: string; seen: Map<string, Seen>; isPolling: boolean }
+/**
+ * What one session keeps between polls: who it is, the files it has read (ctx-bar's reports, turn-mode's modes and
+ * cache-timer's cache states, each by file name), and whether a poll is still running.
+ */
+type Poller = { me: string; seen: { reports: Map<string, Seen<Heavy>>; modes: Map<string, Seen<boolean>>; caches: Map<string, Seen<PaneCache>> }; isPolling: boolean }
 
 /**
  * Whether this session is awake, and its timer while it is. `lastActivity` is when a poll last found input since the
@@ -143,29 +208,49 @@ async function poll($: EngineInterface, w: Waker) {
   }
 }
 
-type Summary = { pane?: unknown; at?: unknown; rows?: unknown }
+type Summary = { pane?: unknown; at?: unknown; order?: unknown; rows?: unknown }
 
 /**
- * The holder's read of the reports: lists the folder, and reads only a file that is new or changed since its last
- * read; one ended, cut mid-write or unchanged costs nothing past the listing.
+ * The holder's read of one folder's JSON files: lists it, and reads only a file that is new or changed since its last
+ * read (or, with `maxAgeMs`, written within it); one cut mid-write or unchanged costs nothing past the listing. The
+ * values by file name; a file whose value is null is left out.
  */
-async function readReports($: EngineInterface, ctxDir: string, now: number, seen: Map<string, Seen>): Promise<Heavy[]> {
-  const entries = await $.fs.list(ctxDir).catch(() => [])
-  const fresh = entries.filter(f => f.kind === 'file' && f.name.endsWith('.json') && now - f.mtimeMs < STALE_MS)
+async function readDir<T>($: EngineInterface, dir: string, now: number, seen: Map<string, Seen<T>>, parse: (text: string) => T | null, maxAgeMs = Infinity): Promise<Map<string, T>> {
+  const entries = await $.fs.list(dir).catch(() => [])
+  const fresh = entries.filter(f => f.kind === 'file' && f.name.endsWith('.json') && now - f.mtimeMs < maxAgeMs)
   const names = new Set(fresh.map(f => f.name))
   for (const name of [...seen.keys()]) if (!names.has(name)) seen.delete(name)
   await Promise.all(
     fresh.map(async f => {
       const known = seen.get(f.name)
       if (known !== undefined && known.mtimeMs === f.mtimeMs && known.size === f.size) return
-      const text = await $.fs.read(`${ctxDir}/${f.name}`).catch(() => null)
-      const row = text === null ? null : rowOf(String(text))
+      const text = await $.fs.read(`${dir}/${f.name}`).catch(() => null)
       // A file cut mid-write is read again next poll: its mtime is not kept.
-      if (text !== null && !isWhole(String(text))) seen.delete(f.name)
-      else seen.set(f.name, { mtimeMs: f.mtimeMs, size: f.size, row })
+      if (text === null || !isWhole(String(text))) seen.delete(f.name)
+      else seen.set(f.name, { mtimeMs: f.mtimeMs, size: f.size, value: parse(String(text)) })
     }),
   )
-  return [...seen.values()].map(s => s.row).filter((row): row is Heavy => row !== null)
+  const values = new Map<string, T>()
+  for (const [name, s] of seen) if (s.value !== null) values.set(name, s.value)
+  return values
+}
+
+/**
+ * The holder's read of the sessions: ctx-bar's reports, less those an agent drives (turn-mode's agentic), each with its
+ * cache from cache-timer when that is installed.
+ */
+async function readReports($: EngineInterface, ctxDir: string, now: number, seen: Poller['seen']): Promise<Heavy[]> {
+  const [reports, modes, caches] = await Promise.all([
+    readDir($, ctxDir, now, seen.reports, rowOf, STALE_MS),
+    readDir($, `${ctxDir}/mode`, now, seen.modes, isDriven),
+    readDir($, `${ctxDir}/cache`, now, seen.caches, cacheOf),
+  ])
+  return [...reports.values()]
+    .filter(row => modes.get(`${row.pane}.json`) !== true)
+    .map(row => {
+      const cache = caches.get(`${row.pane}.json`)
+      return cache === undefined ? row : { ...row, cache }
+    })
 }
 
 /** False for a file cut mid-write, whose text does not parse. */
@@ -197,13 +282,18 @@ async function refreshHeavy($: EngineInterface, poller: Poller) {
       summary = null
     }
     const isHeld = summary !== null && summary.pane !== poller.me && typeof summary.at === 'number' && now - summary.at < HEAVY_LEASE_MS
+    const { order } = settings
     let rows: Heavy[]
-    if (isHeld) {
+    if (isHeld && (summary?.order ?? 'context') === order) {
       if (!Array.isArray(summary?.rows)) return
       rows = drawable(summary.rows)
+    } else if (isHeld) {
+      // The holder picks rows by another order (a session from before the setting changed): read the reports here,
+      // without taking its lease.
+      rows = topSessions(await readReports($, ctxDir, now, poller.seen), HEAVY_COUNT, order, now)
     } else {
-      rows = topSessions(await readReports($, ctxDir, now, poller.seen))
-      await $.fs.write(path, JSON.stringify({ pane: poller.me, at: now, rows }) + '\n').catch(() => {})
+      rows = topSessions(await readReports($, ctxDir, now, poller.seen), HEAVY_COUNT, order, now)
+      await $.fs.write(path, JSON.stringify({ pane: poller.me, at: now, order, rows }) + '\n').catch(() => {})
     }
     await show($, rows, now)
   } finally {
@@ -219,9 +309,10 @@ async function show($: EngineInterface, rows: Heavy[], now: number) {
   if (rows.length > 0 && (await read($, tick)) !== minute) await update($, tick, () => minute)
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
   waker?.timer?.cancel()
   waker = null
+  settings = settingsOf(options)
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -230,7 +321,7 @@ export const register: Register = on => {
       const me = (await $.env.get('HERDR_PANE_ID')) || `session-${Math.random().toString(36).slice(2)}`
       waker?.timer?.cancel()
       // Asleep: no timer and no read until the person's first input; the footer keeps the rows last drawn.
-      waker = { poller: { me, seen: new Map(), isPolling: false }, isAwake: false, hasInput: false, lastActivity: 0, timer: null }
+      waker = { poller: { me, seen: { reports: new Map(), modes: new Map(), caches: new Map() }, isPolling: false }, isAwake: false, hasInput: false, lastActivity: 0, timer: null }
     }
 
     return result
@@ -284,11 +375,16 @@ export const register: Register = on => {
       <Box flexDirection="column" alignItems="flex-end">
         {theirs}
         <Box gap={1}>
-          {top.map(row => (
+          {top.map(row => {
+            const left = settings.show === 'context' ? null : cacheLeft(row.cache, now)
+            return (
             <Box key={`heavy-${row.pane}`} flexShrink={0}>
               <Button key={`go-${row.pane}`} plain label={row.pane} onPress={() => void go(row)} />
               <Box key={`tokens-${row.pane}`} hover={{ scope: scopeOf(row.pane) }}>
-                <Text color={heat(row.tokens)}> {fmt(row.tokens)}</Text>
+                {settings.show !== 'cache' && <Text key={`size-${row.pane}`} color={heat(row.tokens)}> {fmt(row.tokens)}</Text>}
+                {left !== null && <Text key={`cache-${row.pane}`} color={left.color} dimColor={left.color === undefined}> {left.label}</Text>}
+                {/* Cache alone and none warm: a dim dash, so the row still has a place to hover for its card. */}
+                {settings.show === 'cache' && left === null && <Text key={`cache-${row.pane}`} dimColor> –</Text>}
                 {/* Fullscreen: the card floats over the rows above the count,
                     its right edge on the count's; elsewhere the band draws it. */}
                 {isFloating && (
@@ -300,7 +396,8 @@ export const register: Register = on => {
                 )}
               </Box>
             </Box>
-          ))}
+            )
+          })}
         </Box>
       </Box>
     )
