@@ -14,7 +14,7 @@ const BIG = { tokens: 250_000 }
 const between = (wakes: number[], from: number, to: number) => wakes.filter(t => t > from && t <= to)
 const EDIT = (text: string) => ({ origin: { kind: 'composer' }, text, cursor: text.length, start: text.length, end: text.length, inputText: 'x' }) as never
 
-test('an idle session with a live cache wakes only at its deadlines: yellow, the handoff time and expiry', async ($, on) => {
+test('an idle session with a live cache wakes only at its deadlines: yellow, the handoff time and expiry', { options: { handoffLeadMinutes: 10 } }, async ($, on) => {
   const { seen, clock, start } = engine(on)
   await $.session.start(start)
   await $.turn.complete(DONE)
@@ -27,7 +27,7 @@ test('an idle session with a live cache wakes only at its deadlines: yellow, the
   expect(seen.submits).toEqual([])
 })
 
-test('yellow and the handoff come at the same times as before', async ($, on) => {
+test('yellow and the handoff come at the same times as before', { options: { handoffLeadMinutes: 10 } }, async ($, on) => {
   const { seen, clock, start } = engine(on, BIG)
   await $.session.start(start)
   await $.turn.complete(DONE)
@@ -46,7 +46,7 @@ test('yellow and the handoff come at the same times as before', async ($, on) =>
   expect(seen.submits).toEqual([HANDOFF_TURN_PROMPT])
 })
 
-test('a new turn moves the deadlines: the old ones do not fire', async ($, on) => {
+test('a new turn moves the deadlines: the old ones do not fire', { options: { handoffLeadMinutes: 10 } }, async ($, on) => {
   const { seen, clock, start } = engine(on)
   await $.session.start(start)
   await $.turn.complete(DONE)

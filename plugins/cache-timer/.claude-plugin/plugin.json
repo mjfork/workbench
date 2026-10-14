@@ -1,7 +1,7 @@
 {
   "name": "cache-timer",
-  "version": "0.8.0",
-  "description": "Footer countdown of the main prompt cache (yellow near expiry, red once expired); a confirm card before a prompt re-sends an expired cache at full price; writes a handoff note shortly before the cache expires, so a new session can resume from it; writes each pane's cache state for cache-state.sh",
+  "version": "0.9.0",
+  "description": "Footer countdown of the main prompt cache (yellow near expiry, red once expired); a confirm card before a prompt re-sends an expired cache at full price; optionally writes a handoff note shortly before the cache expires (off by default), so a new session can resume from it; writes each pane's cache state for cache-state.sh",
   "author": {
     "name": "Michael Fork"
   },
@@ -13,8 +13,8 @@
     "handoffLeadMinutes": {
       "type": "number",
       "title": "Handoff note, minutes before the cache expires",
-      "description": "While a session sits idle, the model writes a handoff note this many minutes before the prompt cache expires, so a new session can resume from it. 0 turns it off. Not used on the 5-minute cache tier.",
-      "default": 10
+      "description": "While a session sits idle, the model writes a handoff note this many minutes before the prompt cache expires, so a new session can resume from it. 0 (the default) turns it off: Claude Code's auto-compact already covers long sessions. 10 is a good value to turn it on. Not used on the 5-minute cache tier.",
+      "default": 0
     },
     "handoffMinTokens": {
       "type": "number",
