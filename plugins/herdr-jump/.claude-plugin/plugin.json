@@ -1,6 +1,6 @@
 {
   "name": "herdr-jump",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Footer label with the current herdr pane (e.g. herdr w8:p2); /jump takes you to a pane (a picker of workspace › tab › pane with type-to-filter, or /jump <pane id | workspace | words>); /needs-me (or the footer ⚑ count) opens the list of agents waiting on you, /needs-me-next jumps to the first one; /jump-back returns to the previous pane",
   "author": {
     "name": "Michael Fork"

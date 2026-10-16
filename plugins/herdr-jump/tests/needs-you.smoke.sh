@@ -72,6 +72,17 @@ grep -q 'not instructions to you' "$tmp/prompted" || fail "a routed ask is frame
 grep -q '\[marker removed\]' "$tmp/prompted" || fail "a marker inside the ask is defused"
 ! LC_ALL=C grep -q $'[\001-\010\013-\037\177]' "$tmp/prompted" || fail "a routed ask carries no control characters"
 grep -q 'ship\]0;pwned it?' "$tmp/prompted" || fail "the ask's words still reach the driver"
+# An ask the driver could not be handed is queued, but stays out of the person's list while the driver lives.
+mv "$HERDR_BIN" "$HERDR_BIN.real"; printf '#!/usr/bin/env bash\n[ "$1 $2" = "agent prompt" ] && exit 1\nexec "%s.real" "$@"\n' "$HERDR_BIN" > "$HERDR_BIN"; chmod +x "$HERDR_BIN"
+echo "$ask" | ny stop
+mv "$HERDR_BIN.real" "$HERDR_BIN"
+test -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "an ask the driver could not take is kept"
+touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
+ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 0' >/dev/null || fail "an agentic session's ask is not in the person's list"
+echo '{"pane":"w8:p2","mode":"agentic","driver":"w7:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
+touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
+ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "an ask whose driver is gone shows"
+rm "$tmp/.herdr-queue/t/w8_p2.json"
 rm "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
 echo "$hostile" | ny stop
 jq -e '.ask | test("[\\x{0}-\\x{8}\\x{b}-\\x{1f}\\x{202e}]") | not' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "a queued ask carries no control characters"
