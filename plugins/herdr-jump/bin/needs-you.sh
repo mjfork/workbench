@@ -9,8 +9,8 @@
 #   needs-you.sh clear <pane_id>
 #
 # A session in agentic turn mode ($CLAUDE_CONFIG_DIR/ctx/mode/<pane>.json, the turn-mode mod)
-# sends its section to its driver pane instead, as a "[turn-mode ask]" prompt; if the
-# driver cannot take it, the ask falls back to the person's queue.
+# sends its section to its driver pane instead, as a "[turn-mode ask]" prompt. Its asks stay
+# out of the person's list while the driver is a live agent; one whose driver is gone shows.
 #
 # Items live in ~/.herdr-queue/<herdr session>/<pane_id with : as _>.json. Hooks are no-ops
 # outside a herdr pane.
@@ -177,6 +177,12 @@ list)
     jq -e --arg p "$p" 'index($p) != null' <<<"$live" >/dev/null || { log "list drops $p"; rm -f "$f"; }
   done
   asks=$(cat "$dir"/*.json 2>/dev/null | jq -s -c '.') || asks='[]'
+  # An agentic session's ask is its driver's, even one the driver could not be handed: left out while that driver lives.
+  for p in $(jq -r '.[].pane' <<<"$asks"); do
+    d=$(driver_of "$p")
+    [ -n "$d" ] && [ "$d" != "$p" ] && jq -e --arg d "$d" 'index($d) != null' <<<"$live" >/dev/null 2>&1 &&
+      asks=$(jq -c --arg p "$p" 'map(select(.pane != $p))' <<<"$asks")
+  done
   # A blocked pane an agent drives (turn-mode agentic) is the driver's: its driver, when that is a live agent.
   drivers='{}'
   for p in $(jq -r '.[] | select(.agent_status == "blocked") | .pane_id' <<<"$agents"); do
