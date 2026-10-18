@@ -1,9 +1,8 @@
 #!/bin/bash
-# Claude Code status line: directory, project, model and context on line 1; session/week usage and cost on line 2;
+# Claude Code status line: directory, project, model and context (measured against the auto-compact level) on line 1; session/week usage and cost on line 2;
 # the Claude login (email, organization) on line 3. Needs jq. Times use the machine time zone, or STATUSLINE_TZ (e.g. America/Chicago).
 exec 2>/dev/null
 command -v jq >/dev/null || exit 0
-input=$(cat)
 # Every string drawn is stripped of control and invisible characters: a directory or org name with an escape
 # sequence in it would otherwise drive the terminal (clear it, move the cursor, retitle the window).
 clean='def clean: if type == "string" then gsub("[\\p{Cc}\\p{Cf}\\x{2028}\\x{2029}]"; "") else . end;'
@@ -17,21 +16,49 @@ us=$'\037'
 cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; acct_json="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"; cache="$cfg/.statusline-cache"
 IFS="$us" read -r c_v c_email c_org c_r5 c_t5 c_r7 c_t7 c_tz < "$cache" || true
 [ "${c_v:-}" = v1 ] || { c_email=""; c_org=""; c_r5=""; c_t5=""; c_r7=""; c_t7=""; c_tz=""; }
-# Every field in one jq run (the status line is redrawn often): joined by the unit separator, which clean() strips from
-# the values, so a field can never split. An absent field is empty.
-fields=$(printf '%s' "$input" | jq -r "$clean $k"' def f(g): [g][0] // "" | tostring | clean; [
+# Every field in one jq run, reading the input straight from stdin (the status line is redrawn often, and each extra
+# process costs about as much as jq itself): joined by the unit separator, which clean() strips from the values, so a
+# field can never split. An absent field is empty.
+# Context is drawn against the auto-compact level, the tokens at which Claude Code compacts: CLAUDE_CODE_AUTO_COMPACT_WINDOW,
+# else the window settings.json saves for the model (/autocompact) or for every model, else the tuned default (about 967k
+# on a 1M window, the window itself otherwise); capped at the window, then lowered by CLAUDE_AUTOCOMPACT_PCT_OVERRIDE.
+# (A --autocompact flag, or a window set in project settings, is not visible to a status line.)
+settings="$cfg/settings.json"
+if [ -f "$settings" ]; then st=(--rawfile st "$settings"); else st=(--arg st ""); fi
+prog="$clean $k"'
+  def f(g): [g][0] // "" | tostring | clean;
+  def win: if type == "number" and . >= 1e5 and . <= 1e6 then . else null end;
+  ([.context_window.context_window_size | numbers][0]) as $size
+  | ([try ($st | fromjson) catch null | objects][0] // {}) as $s
+  | ([.model.id | strings][0] // "" | sub("\\[1m\\]$"; "") | sub("-[0-9]{8}$"; "")) as $id
+  | (($acw | tonumber? | win)
+     // ($s.modelSettings[$id]?.autoCompactWindow? | win)
+     // ($s.autoCompactWindow? | win)
+     // (if $size == null then null elif $size >= 1e6 then 967000 else $size end)) as $w
+  | (if $w == null then null elif $size != null and $w > $size then $size else $w end) as $w
+  | ([$acp | tonumber? | select(. >= 1 and . < 100)][0]) as $p | (if $w != null and $p != null then $w * $p / 100 | floor else $w end) as $level
+  | ([.context_window.total_input_tokens | numbers][0]
+     // (if $size != null and (.context_window.used_percentage | type) == "number" then .context_window.used_percentage * $size / 100 else null end)) as $used
+  | [
   f(.workspace.current_dir // .cwd // empty | strings),
   f(.workspace.project_dir // empty | strings),
   f(.model.display_name // empty | strings),
-  f(.context_window.used_percentage // empty | numbers | round),
-  f(.context_window.total_input_tokens // empty | numbers | k),
-  f(.context_window.context_window_size // empty | numbers | k),
+  f(if $used != null and $level != null and $level > 0 then $used * 100 / $level else .context_window.used_percentage // empty | numbers end | round),
+  f($used // empty | k),
+  f($level // empty | k),
   f(.cost.total_cost_usd // empty | numbers),
   f(.rate_limits.five_hour.used_percentage // empty | numbers | round),
   f(.rate_limits.five_hour.resets_at // empty | numbers | floor),
   f(.rate_limits.seven_day.used_percentage // empty | numbers | round),
   f(.rate_limits.seven_day.resets_at // empty | numbers | floor)
-] | join("\u001f")')
+] | join("\u001f")'
+# jq starts about 5ms sooner on a program it reads from a file than on one given as an argument, so the program goes in
+# on fd 3, a here-string bash writes itself. A native Windows jq.exe cannot open /dev/fd/3: it is given the argument.
+acw="${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}"; acp="${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}"
+case "${OSTYPE:-}" in
+  msys*|cygwin*) fields=$(jq -r "${st[@]}" --arg acw "$acw" --arg acp "$acp" "$prog") ;;
+  *) fields=$(jq -r "${st[@]}" --arg acw "$acw" --arg acp "$acp" -f /dev/fd/3 3<<<"$prog") ;;
+esac
 fields=${fields%$'\r'}   # a native Windows jq.exe ends its output with CRLF
 IFS="$us" read -r cwd proj model pct used size cost s5 r5 s7 r7 <<<"$fields"
 # Line 1: directory (first and last component only once it is over 20 characters), project, model, context
