@@ -33,10 +33,12 @@ The cheapest model that won't flail. Cheap models take 2-3× the turns on multi-
 |---|---|---|
 | low | `--model haiku --effort low` | one or two files, complete spec, existing pattern: config, copy, renames, fixtures, boilerplate |
 | mid (default) | `--model sonnet --effort medium` | a normal feature or fix with clear acceptance criteria |
-| high | `--model opus --effort high` | design judgment, concurrency, security, data migrations, bugs of unknown cause |
+| high | `--model opus --effort medium` | design judgment, concurrency, security, data migrations, bugs of unknown cause |
 
-Always set effort: an omitted one inherits the person's default, often xhigh. Never give a worker xhigh or max.
-Escalate a ticket one tier when its worker reports `BLOCKED` or fails the same tests twice; past high, ask the person.
+Always set effort: an omitted one inherits the person's default, often xhigh. Never start a worker above medium:
+on the same ticket Opus at high cost 43% more than Opus at medium, for no better result. Escalate a ticket one step
+(low → mid → high → `/effort high`) when its worker reports `BLOCKED` or fails the same tests twice; past that, ask
+the person.
 
 ## 3. Cut lanes
 
@@ -57,16 +59,19 @@ wt="$(git rev-parse --show-toplevel).w1"
 git worktree add -b lane-a "$wt" <integration-branch>
 tab=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$wt" --label w1 --no-focus)
 pane=$(printf '%s' "$tab" | jq -r '.result.root_pane.pane_id')
-herdr agent start w1 --kind claude --pane "$pane" -- --model sonnet --effort medium --autocompact 150k \
-  || { sleep 2; herdr agent start w1 --kind claude --pane "$pane" -- --model sonnet --effort medium --autocompact 150k; }
+herdr agent start w1 --kind claude --pane "$pane" -- --model sonnet --effort medium --autocompact 250k \
+  || { sleep 2; herdr agent start w1 --kind claude --pane "$pane" -- --model sonnet --effort medium --autocompact 250k; }
 "$tm" w1 agentic --driver "$HERDR_PANE_ID"
 ```
 
 Name workers (`w1`, `w2`), not lanes: a worker outlives its first lane. Record each worker's pane, worktree and
 current branch in the table. A start that fails twice means the shell wasn't ready; read the pane before trying again.
 
-`--autocompact 150k` (floor 100k; default is about 967k on a 1M window) makes a runaway context compact long before
-each turn's re-read gets expensive. `agentic` makes each turn end on `DONE`, `BLOCKED: <why>` or `NEEDS-INPUT: <why>`
+`--autocompact` makes a runaway context compact long before each turn's re-read gets expensive (default: about 967k
+on a 1M window; floor 100k). Set it to the starting context plus 150k, rounded up to 50k (`tokens` in this session's
+own ctx file, read before your first tool call, is a fair stand-in): compaction fires about 33k below the window, so
+a window near the starting context compacts over and over. 150k on a repo that starts at 80k compacted one ticket 6
+times. Use the same value for every worker in the run. `agentic` makes each turn end on `DONE`, `BLOCKED: <why>` or `NEEDS-INPUT: <why>`
 and keeps the worker out of the person's queue.
 
 ## 5. Feed one ticket at a time
@@ -117,7 +122,8 @@ worker that is idle between tasks and above 100k.
 1. After the last merge, review in a warm worker, not here (this context is the largest): `git -C <wt> switch -c review
    <integration-branch>`, then `/clear`, `/model sonnet`, `/effort medium`, and
    `/code-review medium --fix` (base: the branch the integration branch will merge into). Merge `review`, then run the tests.
-2. Close the tickets the way the tracker closes work. Close the tabs you opened, then `git worktree remove` each worktree.
+2. Close the tickets the way the tracker closes work. Close the tabs you opened, then `git worktree remove` each worktree
+   and `git branch -d` each merged lane and review branch.
 3. Report the table: ticket, tier, lane, result, commit, usd, plus the total (workers plus this session's own ctx
    file). List the three costliest tickets with their tier: that is where the tiering was wrong, if anywhere.
 
