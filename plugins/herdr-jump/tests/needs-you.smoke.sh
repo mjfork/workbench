@@ -98,6 +98,12 @@ for i in $(seq 60); do STUB_SLEEP=1 ny list > "$tmp/out.$i" & done; wait
 for i in $(seq 60); do jq -e 'type == "array"' "$tmp/out.$i" >/dev/null || fail "every poll gets a list, even while another rebuilds"; done
 test ! -e "$tmp/.herdr-queue/t/.list-lock" || fail "the rebuild lock is released"
 ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "the rebuilt list carries the ask"
+# A dismiss while another footer rebuilds: the list served meanwhile no longer carries the ask.
+mkdir "$tmp/.herdr-queue/t/.list-lock"
+ny clear w8:p2
+ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 0' >/dev/null || fail "a dismissed ask leaves the list served during a rebuild"
+rmdir "$tmp/.herdr-queue/t/.list-lock"
+echo "$ask" | ny stop; touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"; ny list >/dev/null
 # A lock left by a killed rebuild does not stop the list for good.
 mkdir "$tmp/.herdr-queue/t/.list-lock"; touch -t 200001010000 "$tmp/.herdr-queue/t/.list-lock" "$tmp/.herdr-queue/t/.list-cache"
 ny list >/dev/null; ny list >/dev/null

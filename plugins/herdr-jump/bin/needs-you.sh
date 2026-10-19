@@ -35,6 +35,15 @@ rm -f "$dir/.last-stop-input.json"
 # deleted list sent every footer to rebuild at once, each asking herdr for every agent.) A fixed old date, as touch -t
 # reads local time and a 1970 one is before the epoch east of UTC.
 drop_cache() { [ -f "$dir/.list-cache" ] && touch -t 200001010000 "$dir/.list-cache"; return 0; }
+# Takes a pane's ask out of the shared list too, then marks it stale: while another footer rebuilds, the rest are
+# served this list, and a dismissed ask must not stay on screen until the next rebuild.
+uncache() {
+  local c="$dir/.list-cache"
+  [ -f "$c" ] && jq -c --arg p "$1" 'map(select(.pane != $p or .kind != "ask"))' "$c" > "$c.u$$" 2>/dev/null &&
+    mv "$c.u$$" "$c"
+  rm -f "$c.u$$"
+  drop_cache
+}
 log() { printf '%s %s pid=%s ppid=%s pane=%s\n' "$(date +%T)" "$*" "$$" "$PPID" "${HERDR_PANE_ID:-}" >> "$dir/.log"; }
 item() { printf '%s/%s.json' "$dir" "${1//:/_}"; }
 # The driver pane of an agentic session (turn-mode), else nothing.
@@ -143,12 +152,12 @@ prompt)
   fi
   log "prompt clears $HERDR_PANE_ID"
   rm -f "$(item "$HERDR_PANE_ID")" "$(item "$HERDR_PANE_ID").replied"
-  drop_cache
+  uncache "$HERDR_PANE_ID"
   ;;
 clear)
   log "clear $2"
   rm -f "$(item "${2:?pane id}")" "$(item "${2:?pane id}").replied"
-  drop_cache
+  uncache "$2"
   ;;
 list)
   # Every session's footer polls this; serve a cached answer under 15s old. A stop or prompt marks the cache stale, so a new
@@ -209,6 +218,10 @@ list)
         | map(owner as $o
           | {pane: .pane_id, workspace: .workspace_id, kind: "blocked", ts: null, ask: blocked_text($o)} + $o)) as $b
     | ($a + $b) | map(.label = ($spaces[.workspace] // .workspace)) | sort_by(.ts // 0)' > "$cache.$$"
+  # An ask cleared while this ran (a dismiss, an answer) stays out: its file is gone.
+  kept=$(for f in "$dir"/*.json; do [ -e "$f" ] && jq -r .pane "$f"; done 2>/dev/null | jq -R . | jq -s -c .)
+  jq -c --argjson kept "${kept:-[]}" 'map(select(.kind != "ask" or (.pane as $p | $kept | index($p))))' "$cache.$$" \
+    > "$cache.$$.k" && mv "$cache.$$.k" "$cache.$$"
   # Cache only an answer built from a real herdr lookup.
   if [ -n "$live" ]; then mv "$cache.$$" "$cache" && cat "$cache"; else cat "$cache.$$"; rm -f "$cache.$$"; fi
   ;;
