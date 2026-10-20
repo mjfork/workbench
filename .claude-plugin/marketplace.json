@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "cockpit",
-      "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer. Four of them need herdr; cache-timer does not. Has no code of its own.",
+      "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer. Four of them need herdr; cache-timer does not. Has no code of its own; and /cockpit:vet-with-herdr, which takes PRs through /vet:map, /vet:address and /vet:verify in parallel Herdr tabs (needs the vet plugin).",
       "source": "./plugins/cockpit",
       "category": "productivity"
     },
@@ -42,9 +42,9 @@
       "category": "productivity"
     },
     {
-      "name": "review",
-      "description": "Review a change by its decisions, not its lines: /review-map (fresh auditor, independent reviewer, three voters, one map on the PR), /review-address (fix loop with re-checks, one checked reply), /review-verify (a fresh agent judges the answers before merge). Reviewer is Codex if installed, else fresh Opus; Fable only on deep runs with your yes.",
-      "source": "./plugins/review",
+      "name": "vet",
+      "description": "Vet an agent's change by its decisions, not its lines: /vet:map (fresh auditor, independent reviewer, three voters, one map on the PR), /vet:address (fix loop with re-checks, one checked reply), /vet:verify (a fresh agent judges the answers before merge). Fresh Opus seats; Fable only on deep runs with your yes.",
+      "source": "./plugins/vet",
       "category": "development"
     }
   ]

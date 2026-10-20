@@ -1,7 +1,7 @@
 {
   "name": "cockpit",
-  "version": "1.7.0",
-  "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer, plus /cockpit:orchestrate, process management for implementation skills: independent lanes run in parallel Herdr tabs (one worktree each) driven from your window, at the fewest tokens and least wall-clock time; and /cockpit:implement-with-herdr, which drives a spec's tickets to merged code at the lowest cost: each ticket on the cheapest model and effort that can do it, workers cleared between tickets and auto-compacting early; and /lets-compact <what's next>, which writes the best /compact (or /clear) for what you do next, proposed for you to run. Four of the plugins need herdr; cache-timer does not.",
+  "version": "1.8.0",
+  "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer, plus /cockpit:orchestrate, process management for implementation skills: independent lanes run in parallel Herdr tabs (one worktree each) driven from your window, at the fewest tokens and least wall-clock time; and /cockpit:implement-with-herdr, which drives a spec's tickets to merged code at the lowest cost: each ticket on the cheapest model and effort that can do it, workers cleared between tickets and auto-compacting early; and /lets-compact <what's next>, which writes the best /compact (or /clear) for what you do next, proposed for you to run. /cockpit:vet-with-herdr takes PRs through /vet:map, /vet:address and /vet:verify in parallel Herdr tabs (needs the vet plugin). Four of the plugins need herdr; cache-timer does not.",
   "author": {
     "name": "Michael Fork"
   },

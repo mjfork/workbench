@@ -71,13 +71,13 @@ Sometimes you want a summary and a clear ask. Sometimes you're watching and want
 
 | Plugin | What it does | Needs |
 |---|---|---|
-| `cockpit` | Installs the five below, plus `/cockpit:orchestrate`: process management for implementation skills: independent lanes run in parallel Herdr tabs, one worktree each, driven from your window; and `/cockpit:implement-with-herdr`: drives a spec's tickets to merged code at the lowest cost, each ticket on the cheapest model and effort that can do it; and `/lets-compact <what's next>`: the best `/compact` (or `/clear`) for what you do next, proposed for you to run | herdr, for four of them |
+| `cockpit` | Installs the five below, plus `/cockpit:orchestrate`: process management for implementation skills: independent lanes run in parallel Herdr tabs, one worktree each, driven from your window; and `/cockpit:implement-with-herdr`: drives a spec's tickets to merged code at the lowest cost, each ticket on the cheapest model and effort that can do it; and `/lets-compact <what's next>`: the best `/compact` (or `/clear`) for what you do next, proposed for you to run; and `/cockpit:vet-with-herdr <pr>...`: takes PRs through `/vet:map`, `/vet:address` and `/vet:verify` in parallel Herdr tabs until each passes (needs `vet`) | herdr, for four of them |
 | `cache-timer` | Cache countdown, expired-cache confirm card, [handoff note](docs/handoff.md) | nothing |
 | `ctx-bar` | Context bar by tool; hover cards; `/ctxbar` | herdr, `ctx-heavy` |
 | `ctx-heavy` | Your heaviest sessions across herdr, with cache time left; click to go | herdr, `herdr-jump`; shows sessions that run `ctx-bar`; cache times from `cache-timer`; skips `turn-mode` agentic sessions |
 | `herdr-jump` | Pane label; needs-you queue (`⚑ N`, `/needs-me`, `/needs-me-next`); `/jump`, `/jump-back` | herdr, `bash`, `jq` |
 | `turn-mode` | How a turn ends: async, real-time or agentic | herdr, `ctx-bar` |
-| `review` | Review a change by its decisions, not its lines: `/review-map`, `/review-address`, `/review-verify` | `gh`, `git`, Node 22+; not part of `cockpit` |
+| `vet` | Vet a change by its decisions, not its lines: `/vet:map`, `/vet:address`, `/vet:verify` | `gh`, `git`, Node 22+; not part of `cockpit` |
 
 A plugin installs what it needs. `turn-mode` → `ctx-bar` → `ctx-heavy` → `herdr-jump`, so installing any one brings the ones after it. That chain also sets the order they draw in, which is what lines the footer up on the right.
 
@@ -94,9 +94,9 @@ A plugin installs what it needs. `turn-mode` → `ctx-bar` → `ctx-heavy` → `
 | `/needs-me-next` | `herdr-jump` | Jumps to the next pane waiting on you: dialogs first, then the longest wait; never this pane |
 | `/ctxbar` | `ctx-bar` | Prints the context breakdown by kind, with the biggest chunks of each |
 | `/ctxbar toggle` | `ctx-bar` | Hides or shows the footer bar |
-| `/review-map [<pr>]` | `review` | A fresh Opus auditor maps the change's silent decisions, blast radius, door, contradictions and test gaming; an independent reviewer verdicts every row; three voters cut the noise; one map posts on the PR. `--litigate` debates to consensus; `--auto` runs with no human |
-| `/review-address [<pr>]` | `review` | Fixes every MUST-FIX, each round re-checked by a fresh reviewer; gives every other item one closed answer; posts one reply, checked by script first. Escalates what only you can decide |
-| `/review-verify [<pr>]` | `review` | A fresh read-only agent judges that the map was answered honestly and says whether a human must approve; `--post` writes the verdict and a `review-verify` status to require in branch protection |
+| `/vet:map [<pr>]` | `vet` | A fresh Opus auditor maps the change's silent decisions, blast radius, door, contradictions and test gaming; an independent reviewer verdicts every row; three voters cut the noise; one map posts on the PR. `--litigate` debates to consensus; `--auto` runs with no human |
+| `/vet:address [<pr>]` | `vet` | Fixes every MUST-FIX, each round re-checked by a fresh reviewer; gives every other item one closed answer; posts one reply, checked by script first. Escalates what only you can decide |
+| `/vet:verify [<pr>]` | `vet` | A fresh read-only agent judges that the map was answered honestly and says whether a human must approve; `--post` writes the verdict and a `vet-verify` status to require in branch protection |
 
 The `herdr-jump` commands exist only in sessions running inside herdr.
 

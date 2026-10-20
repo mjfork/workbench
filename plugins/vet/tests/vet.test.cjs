@@ -9,7 +9,7 @@ const { assess, sinceReply } = require("../scripts/risk.cjs");
 const COMMITS = ["93e9048a1b2c3d4e5f60718293a4b5c6d7e8f901", "f38528b0c1d2e3f405162738495a6b7c8d9e0f12"];
 const HEAD = "f38528b";
 
-const MAP = `<!-- review-map -->
+const MAP = `<!-- vet-map -->
 ## Review map · #12 · 2026-10-19
 
 **Head:** 93e9048
@@ -74,7 +74,7 @@ const { items } = parseMap(MAP);
 
 function reply(over = {}, { marker = true, head = HEAD, drop = [], extra = "" } = {}) {
   const d = { ...GOOD, ...over };
-  return (marker ? "<!-- review-address -->\n" : "") + "Response.\n" + (head ? `**Head:** ${head}\n` : "") + "\n" +
+  return (marker ? "<!-- vet-address -->\n" : "") + "Response.\n" + (head ? `**Head:** ${head}\n` : "") + "\n" +
     items.filter((i) => !drop.includes(i.id))
       .map((i) => `### ${i.id} · ${i.title}\n**Disposition:** ${d[i.id]}\n**Detail:** see commit.\n`).join("\n") + extra;
 }
@@ -182,7 +182,7 @@ test("numstat is read NUL-separated, so odd names aren't misparsed", () => {
   assert.deepStrictEqual(r.files.map((f) => f.file), ['db/migrations/"q\tx".sql', "src/a b.ts"]);
   assert.deepStrictEqual(r.red, ['db/migrations/"q\tx".sql']);
 });
-test(".review/red-paths is itself RED", () => assert.ok(isRed(".review/red-paths", DEFAULT_RED)));
+test(".vet/red-paths is itself RED", () => assert.ok(isRed(".vet/red-paths", DEFAULT_RED)));
 
 // --- the documented format and the scripts agree ---
 
@@ -194,9 +194,9 @@ test("map-format.md's skeletons parse and check", () => {
   assert.deepStrictEqual(map.items.map((i) => i.id), ["L3", "L1", "G1", "C1", "R1", "S1", "P1", "E1"]);
   const ok = { L3: "changed in 93e9048", L1: "changed in 93e9048", G1: "fixed in 93e9048", C1: "changed in 93e9048",
     R1: "fixed in 93e9048", S1: "fixed in 93e9048", P1: "filed as #7", E1: "decided: merge it behind the flag" };
-  const text = "<!-- review-address -->\n**Head:** 93e9048\n\n" +
+  const text = "<!-- vet-address -->\n**Head:** 93e9048\n\n" +
     map.items.map((i) => `### ${i.id} · x\n**Disposition:** ${ok[i.id]}\n`).join("\n");
   assert.deepStrictEqual(check({ items: map.items, reply: text, commits: COMMITS, closed: true }).errors, []);
-  assert.match(blocks[1], /<!-- review-address -->/);
+  assert.match(blocks[1], /<!-- vet-address -->/);
   assert.match(blocks[1], /\*\*Head:\*\*/);
 });
