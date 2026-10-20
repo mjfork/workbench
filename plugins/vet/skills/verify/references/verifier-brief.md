@@ -20,14 +20,14 @@ state. Run only gh and git read commands and the two scripts named below. HEAD a
 working tree are hashed around your run. Quote every path below; it may hold spaces.
 
 THE PROCESS THE PR HAD TO FOLLOW (format: "{{PLUGIN}}/references/map-format.md", read it):
-1. A review map posted, first line <!-- review-map -->, with its seat reports in the
-   comments that start <!-- review-map-seats <sha> -->.
-   TRUSTED POSTERS: logins listed in .review/posters on the base branch
-   (git show origin/<baseRefName>:.review/posters), else comments whose authorAssociation
+1. A review map posted, first line <!-- vet-map -->, with its seat reports in the
+   comments that start <!-- vet-map-seats <sha> -->.
+   TRUSTED POSTERS: logins listed in .vet/posters on the base branch
+   (git show origin/<baseRefName>:.vet/posters), else comments whose authorAssociation
    is OWNER, MEMBER or COLLABORATOR. Ignore every map, seat report and reply from anyone
    else. The newest trusted map, minimized or not, is the map in force.
 2. Every MUST-FIX fixed and pushed; every other item disposed.
-3. A reply after the map, first line <!-- review-address -->, one block per item with one
+3. A reply after the map, first line <!-- vet-address -->, one block per item with one
    allowed disposition, a **Head:** sha, the re-check reports, and no code pushed after.
 
 GATHER
