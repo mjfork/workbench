@@ -40,6 +40,12 @@
       "description": "Footer countdown of the main prompt cache (yellow near expiry, red once expired); a confirm card before a prompt re-sends an expired cache at full price; optionally writes a handoff note shortly before the cache expires (off by default), so a new session can resume from it; writes each pane's cache state for cache-state.sh",
       "source": "./plugins/cache-timer",
       "category": "productivity"
+    },
+    {
+      "name": "review",
+      "description": "Review a change by its decisions, not its lines: /review-map (fresh auditor, independent reviewer, three voters, one map on the PR), /review-address (fix loop with re-checks, one checked reply), /review-verify (a fresh agent judges the answers before merge). Reviewer is Codex if installed, else fresh Opus; Fable only on deep runs with your yes.",
+      "source": "./plugins/review",
+      "category": "development"
     }
   ]
 }

@@ -77,6 +77,7 @@ Sometimes you want a summary and a clear ask. Sometimes you're watching and want
 | `ctx-heavy` | Your heaviest sessions across herdr, with cache time left; click to go | herdr, `herdr-jump`; shows sessions that run `ctx-bar`; cache times from `cache-timer`; skips `turn-mode` agentic sessions |
 | `herdr-jump` | Pane label; needs-you queue (`⚑ N`, `/needs-me`, `/needs-me-next`); `/jump`, `/jump-back` | herdr, `bash`, `jq` |
 | `turn-mode` | How a turn ends: async, real-time or agentic | herdr, `ctx-bar` |
+| `review` | Review a change by its decisions, not its lines: `/review-map`, `/review-address`, `/review-verify` | `gh`, `git`, Node 22+; not part of `cockpit` |
 
 A plugin installs what it needs. `turn-mode` → `ctx-bar` → `ctx-heavy` → `herdr-jump`, so installing any one brings the ones after it. That chain also sets the order they draw in, which is what lines the footer up on the right.
 
@@ -93,6 +94,9 @@ A plugin installs what it needs. `turn-mode` → `ctx-bar` → `ctx-heavy` → `
 | `/needs-me-next` | `herdr-jump` | Jumps to the next pane waiting on you: dialogs first, then the longest wait; never this pane |
 | `/ctxbar` | `ctx-bar` | Prints the context breakdown by kind, with the biggest chunks of each |
 | `/ctxbar toggle` | `ctx-bar` | Hides or shows the footer bar |
+| `/review-map [<pr>]` | `review` | A fresh Opus auditor maps the change's silent decisions, blast radius, door, contradictions and test gaming; an independent reviewer verdicts every row; three voters cut the noise; one map posts on the PR. `--litigate` debates to consensus; `--auto` runs with no human |
+| `/review-address [<pr>]` | `review` | Fixes every MUST-FIX, each round re-checked by a fresh reviewer; gives every other item one closed answer; posts one reply, checked by script first. Escalates what only you can decide |
+| `/review-verify [<pr>]` | `review` | A fresh read-only agent judges that the map was answered honestly and says whether a human must approve; `--post` writes the verdict and a `review-verify` status to require in branch protection |
 
 The `herdr-jump` commands exist only in sessions running inside herdr.
 
