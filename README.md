@@ -83,7 +83,7 @@ One list, shared by every session in a herdr server, of the panes waiting on you
 | **Order** | Dialogs and the longest waits first. Go to one and leave it waiting, and it moves to the bottom until it asks again |
 | **Driven sessions** | A session another agent drives (turn-mode's agentic) sends its asks to that agent, not to you. A dialog it's stuck on stays in your list, with the driver named as its owner |
 
-Click `⚑ N` (or run `/needs-me`) to see the list, or `/needs-me-next` to go to the top item that isn't this pane. Something look wrong? Every add and clear is logged in `~/.herdr-queue/<herdr session>/.log`.
+Run `/needs-me` to go to the top item that isn't this pane, or click `⚑ N` (or run `/needs-me-list`) to see the list. Something look wrong? Every add and clear is logged in `~/.herdr-queue/<herdr session>/.log`.
 
 ## Commands
 
@@ -91,8 +91,8 @@ The workflow and `vet` commands are listed above. The rest:
 
 | Command | Plugin | What it does |
 |---|---|---|
-| `/needs-me` | `herdr-jump` | Opens the needs-you list: click one to go there, or dismiss an ask |
-| `/needs-me-next` | `herdr-jump` | Goes to the top of that list, skipping this pane |
+| `/needs-me` | `herdr-jump` | Goes to the top of the needs-you list, skipping this pane |
+| `/needs-me-list` | `herdr-jump` | Opens that list: click one to go there, or dismiss an ask |
 | `/jump` | `herdr-jump` | A picker of every herdr pane (workspace › tab › pane); type to filter |
 | `/jump <pane \| workspace \| words>` | `herdr-jump` | Straight to a pane ID (`w8N:p2`), a workspace ID or number, or the one title the words match (several open the picker, filtered) |
 | `/jump-back` | `herdr-jump` | Back to the pane you were in before |
