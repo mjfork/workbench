@@ -1,12 +1,11 @@
 import type { On } from 'claude-code'
-import { KEY } from './engine'
+import { COMPOSER, KEY } from './engine'
 import { expect, mock, test } from 'claude-code/testing'
 
 // What an idle session costs: ~60 sessions load this mod, so a plain turn should start no process, and a queue that has
 // not changed should draw no footer again.
 
 const HOME = '/home/ubuntu'
-const REPLIED = `${HOME}/.herdr-queue/default/w9B_p1.json.replied`
 const CACHE = `${HOME}/.herdr-queue/default/.list-cache`
 const START = { cwd: '/tmp', surface: 'terminal', isInteractive: true } as never
 const DONE = { reason: 'answer', durationMs: 1, isAborted: false, turnId: 't1' }
@@ -21,6 +20,7 @@ function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }
   const env: Record<string, string> = { CLAUDE_CONFIG_DIR: `${HOME}/.claude`, HOME, HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
   on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('prompt.edit', (_$, e) => ({ text: e.text, cursor: e.cursor }) as never)
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('process.run', (_$, e) => {
     runs.push([...e.argv])
     const stdout = e.argv[0] === 'bash' && e.argv[2] === 'list' ? JSON.stringify(queue) : '{}'
@@ -52,7 +52,7 @@ function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }
   return { runs, writes, clock, files, stops, draws: () => draws }
 }
 
-test('a turn with no Needs-you section and no relayed reply starts no process', async ($, on) => {
+test('a turn with no Needs-you section starts no process', async ($, on) => {
   const e = engine(on)
   await $.session.start(START)
   await $.prompt.edit(KEY)
@@ -80,13 +80,15 @@ test('a heading not at the start of its line is not a section: the turn starts n
   expect(e.stops()).toBe(0)
 })
 
-test('a turn with no section but a relayed reply waiting starts the script, which closes the ask', async ($, on) => {
-  const e = engine(on, { [REPLIED]: { text: '' } })
+test('an answer redraws the queue once the script has cleared it, not at the next poll', async ($, on) => {
+  const e = engine(on)
   await $.session.start(START)
   await $.prompt.edit(KEY)
-  await $.turn.complete({ ...DONE, answer: 'Done as you said.' } as never)
   await settle()
-  expect(e.stops()).toBe(1)
+  const before = e.runs.length
+  await $.prompt.submit(COMPOSER('yes'))
+  await settle()
+  expect(e.runs.slice(before).map(r => r[2])).toEqual(['prompt', 'list'])
 })
 
 test('an empty answer starts the script: it may find the text in the transcript', async ($, on) => {
