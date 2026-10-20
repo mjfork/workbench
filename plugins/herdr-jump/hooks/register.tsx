@@ -47,6 +47,8 @@ const LIST_LOCK_STALE_MS = 30_000
 const IDLE_MS = 10 * 60_000
 /** The script that keeps the needs-you queue (`list`, `clear <pane>`, and the `stop` and `prompt` hook actions), shipped in this plugin's bin/. */
 const needsYou = ($: EngineInterface) => `${$.plugin.root}/bin/needs-you.sh`
+/** Prints a line each time herdr focuses this pane, its tab or its workspace: a blocked socket read, no timer. */
+const focusWatch = ($: EngineInterface) => `${$.plugin.root}/bin/focus-watch.sh`
 const query = atom({ plugin: 'herdr-jump', key: 'query' } as const, '')
 const panes = atom({ plugin: 'herdr-jump', key: 'panes' } as const, [])
 const queue = atom({ plugin: 'herdr-jump', key: 'queue' } as const, [])
@@ -70,6 +72,7 @@ function wake($: EngineInterface): void {
     isActive = true
     return
   }
+  watchFocus($)
   isAwake = true
   isActive = false
   // A wake rides on a tool call or a keystroke: nothing in it may throw into that.
@@ -84,6 +87,36 @@ function wake($: EngineInterface): void {
   } catch {
     sleep()
   }
+}
+
+// Claude Code has no terminal-focus event, so an asleep footer would show the queue it last read until you typed in it:
+// asks you cleared from another pane stayed on screen. herdr's own focus events reach the session through one child
+// per session that reads its socket and prints a line when this pane gets focus; each line wakes the session and
+// redraws the footer from the shared list. A child that ended (herdr restarted) starts again on the next wake.
+let isWatchingFocus = false
+
+/** Starts the focus child unless it runs already. Never awaited: it lives as long as the session. */
+function watchFocus($: EngineInterface): void {
+  if (!isInHerdr || isWatchingFocus) return
+  isWatchingFocus = true
+  void (async () => {
+    try {
+      for await (const { stream, text } of $.process.spawn({ argv: ['bash', focusWatch($)] })) {
+        if (stream === 'stdout' && text.includes('focused')) onFocused($)
+      }
+    } catch {
+      // No herdr socket, or the child could not start: the footer keeps its old behaviour.
+    } finally {
+      isWatchingFocus = false
+    }
+  })()
+}
+
+/** This pane got focus: wake (an asleep session refreshes as it wakes), else refresh now. */
+function onFocused($: EngineInterface): void {
+  if (!isAwake) return wake($)
+  isActive = true
+  void refreshQueue($, false).catch(() => {})
 }
 
 /** Cancels the polls; the next wake event starts them again. */
@@ -387,8 +420,10 @@ export const register: Register = on => {
       pane = (await $.env.get('HERDR_PANE_ID')) ?? null
       isInHerdr = true
     }
-    // Asleep until something wakes it: no poll, and the footer draws the queue it last read (none yet).
+    // Asleep until something wakes it: no poll, and the footer draws the queue it last read (none yet). Focusing
+    // this pane is one of those wakes.
     sleep()
+    watchFocus($)
 
     return next(e)
   })
