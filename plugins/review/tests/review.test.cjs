@@ -155,19 +155,32 @@ test("docs exclude RED markdown", () => {
   assert.ok(!isDocs("src/a.ts", DEFAULT_RED));
 });
 test("depth is deep on any RED file or over 1,000 lines", () => {
-  assert.strictEqual(assess("10\t2\tsrc/a.ts\n", DEFAULT_RED).depth, "light");
-  assert.strictEqual(assess("1\t0\tdb/migrations/1.sql\n", DEFAULT_RED).depth, "deep");
-  assert.strictEqual(assess("900\t101\tsrc/a.ts\n-\t-\timg.png\n", DEFAULT_RED).depth, "deep");
-  assert.strictEqual(assess("900\t100\tsrc/a.ts\n", DEFAULT_RED).changedLines, 1000);
-  assert.strictEqual(assess("900\t100\tsrc/a.ts\n", DEFAULT_RED).depth, "light");
+  assert.strictEqual(assess("10\t2\tsrc/a.ts\0", DEFAULT_RED).depth, "light");
+  assert.strictEqual(assess("1\t0\tdb/migrations/1.sql\0", DEFAULT_RED).depth, "deep");
+  assert.strictEqual(assess("900\t101\tsrc/a.ts\0-\t-\timg.png\0", DEFAULT_RED).depth, "deep");
+  assert.strictEqual(assess("900\t100\tsrc/a.ts\0", DEFAULT_RED).changedLines, 1000);
+  assert.strictEqual(assess("900\t100\tsrc/a.ts\0", DEFAULT_RED).depth, "light");
 });
 
 test("--since ignores base's files and docs, keeps the PR's code", () => {
   const sameAsBase = (f) => f === "db/migrations/1.sql";       // came in with Update branch
-  const r = sinceReply(["db/migrations/1.sql", "docs/a.md", "src/a.ts", "skills/x/SKILL.md"], sameAsBase, DEFAULT_RED);
+  const r = sinceReply(["db/migrations/1.sql", "docs/a.md", "src/a.ts", "skills/x/SKILL.md"], sameAsBase, () => false, DEFAULT_RED);
   assert.deepStrictEqual(r.changed, ["docs/a.md", "src/a.ts", "skills/x/SKILL.md"]);
   assert.deepStrictEqual(r.code, ["src/a.ts", "skills/x/SKILL.md"]);
   assert.deepStrictEqual(r.red, ["skills/x/SKILL.md"]);
+});
+test("--since counts a PR file reverted to base after the reply", () => {
+  const r = sinceReply(["src/fix.ts"], () => true, (f) => f === "src/fix.ts", DEFAULT_RED);
+  assert.deepStrictEqual(r.code, ["src/fix.ts"]);
+});
+test("prompt-bearing markdown is RED, not docs", () => {
+  for (const f of ["plugins/x/skills/y/references/notes.md", "plugins/x/commands/go.md", ".claude/agents/a.md", "docs/review-brief.md"])
+    assert.ok(!isDocs(f, DEFAULT_RED), f);
+});
+test("numstat is read NUL-separated, so odd names aren't misparsed", () => {
+  const r = assess('1\t0\tdb/migrations/"q\tx".sql\0' + "2\t0\tsrc/a b.ts\0", DEFAULT_RED);
+  assert.deepStrictEqual(r.files.map((f) => f.file), ['db/migrations/"q\tx".sql', "src/a b.ts"]);
+  assert.deepStrictEqual(r.red, ['db/migrations/"q\tx".sql']);
 });
 test(".review/red-paths is itself RED", () => assert.ok(isRed(".review/red-paths", DEFAULT_RED)));
 

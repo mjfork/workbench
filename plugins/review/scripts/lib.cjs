@@ -17,6 +17,7 @@ const DEFAULT_RED = [
   ".github/workflows/**", "**/Dockerfile", "**/docker-compose*", "**/deploy/**", "**/*.tf", "**/k8s/**",
   "**/openapi*.*", "**/*.proto", "**/design-system/**", "**/tokens/**",
   "**/AGENTS.md", "**/CLAUDE.md", "**/SKILL.md", "**/.claude/**", "**/.claude-plugin/**",
+  "**/skills/**", "**/commands/**", "**/agents/**", "**/*prompt*", "**/*brief*",
   ".review/**",
 ];
 

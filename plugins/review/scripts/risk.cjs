@@ -14,8 +14,9 @@ const { readRedGlobs, isRed, isDocs } = require("./lib.cjs");
 
 const DEEP_LINES = 1000;
 
+// `git diff -z --numstat`: "add\tdel\tpath\0" per file, paths raw (no quoting).
 function assess(numstat, globs) {
-  const files = numstat.split("\n").filter(Boolean).map((l) => {
+  const files = numstat.split("\0").filter(Boolean).map((l) => {
     const [add, del, ...rest] = l.split("\t");
     const file = rest.join("\t");
     const lines = (add === "-" ? 0 : +add) + (del === "-" ? 0 : +del);
@@ -27,22 +28,27 @@ function assess(numstat, globs) {
 }
 
 function git(args, cwd) {
-  return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 << 20 }).trim();
+  return execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 << 20 }).replace(/\n$/, "");
 }
 
 function defaultBase(cwd) {
   try { return git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd); } catch { return "main"; }
 }
 
-// Files changed since `since` that the PR itself touches: same content as base
-// means the change came in with a base merge.
-function sinceReply(changed, sameAsBase, globs) {
-  const own = changed.filter((f) => !sameAsBase(f));
+// Files changed since `since`, less those a base merge brought in: untouched by
+// the PR at the reply and identical to base now. A PR file reverted to base
+// after the reply still counts.
+function sinceReply(changed, sameAsBase, touchedAtReply, globs) {
+  const own = changed.filter((f) => touchedAtReply(f) || !sameAsBase(f));
   return { changed: own, code: own.filter((f) => !isDocs(f, globs)), red: own.filter((f) => isRed(f, globs)) };
 }
 
 function blob(cwd, ref, file) {
-  try { return git(["rev-parse", `${ref}:${file}`], cwd); } catch { return null; }
+  try {
+    return execFileSync("git", ["rev-parse", `${ref}:${file}`], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;   // absent on that ref
+  }
 }
 
 function main(argv) {
@@ -53,12 +59,13 @@ function main(argv) {
   const head = opt.head ?? "HEAD";
   const globs = readRedGlobs(cwd, base);
   if (opt.since) {
-    const changed = git(["diff", "--name-only", "--no-renames", opt.since, head], cwd).split("\n").filter(Boolean);
-    const r = sinceReply(changed, (f) => blob(cwd, head, f) === blob(cwd, base, f), globs);
+    const names = (args) => git(["diff", "-z", "--name-only", "--no-renames", ...args], cwd).split("\0").filter(Boolean);
+    const atReply = new Set(names([`${base}...${opt.since}`]));
+    const r = sinceReply(names([opt.since, head]), (f) => blob(cwd, head, f) === blob(cwd, base, f), (f) => atReply.has(f), globs);
     console.log(JSON.stringify({ base, since: opt.since, head, ...r }, null, 2));
     return 0;
   }
-  const r = assess(git(["diff", "--numstat", "--no-renames", `${base}...${head}`], cwd), globs);
+  const r = assess(git(["diff", "-z", "--numstat", "--no-renames", `${base}...${head}`], cwd), globs);
   console.log(JSON.stringify({ base, head, ...r }, null, 2));
   return 0;
 }
