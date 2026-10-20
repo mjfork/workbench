@@ -48,6 +48,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const pane = await $.ui.mount({ plugin: 'herdr-jump', surface, component: 'Pane', requestId: 'herdr-queue', props: PANE_PROPS })
     await pane.press({ key: 'go-w6N:p7' })
     expect(seen.runs).toContainEqual(['herdr', 'agent', 'focus', 'w6N:p7'])
+    // Gone to, it moves to the bottom of the list.
+    expect(seen.runs).toContainEqual(['bash', expect.stringMatching(/\/bin\/needs-you\.sh$/), 'seen', 'w6N:p7'])
   })
 
   test(`dismiss clears an ask (${surface})`, async ($, on) => {

@@ -7,6 +7,7 @@
 #   needs-you.sh prompt   UserPromptSubmit hook: someone answered; clear this pane
 #   needs-you.sh list     JSON array: queued asks + agents blocked on a dialog
 #   needs-you.sh clear <pane_id>
+#   needs-you.sh seen <pane_id>   you went to it: it moves to the bottom until it asks again
 #
 # A session in agentic turn mode ($CLAUDE_CONFIG_DIR/ctx/mode/<pane>.json, the turn-mode mod)
 # sends its section to its driver pane instead, as a "[turn-mode ask]" prompt. Its asks stay
@@ -35,13 +36,17 @@ rm -f "$dir/.last-stop-input.json"
 # deleted list sent every footer to rebuild at once, each asking herdr for every agent.) A fixed old date, as touch -t
 # reads local time and a 1970 one is before the epoch east of UTC.
 drop_cache() { [ -f "$dir/.list-cache" ] && touch -t 200001010000 "$dir/.list-cache"; return 0; }
+# The list's order: oldest first, by when it asked or when you last went to it (seen), whichever is later; a tie goes to
+# the one you went to later.
+order='sort_by([([(.ts // 0), (.seen // 0)] | max), (.seen // 0)])'
+seen_file() { printf '%s/.seen-%s' "$dir" "${1//:/_}"; }
 # Takes a pane's ask out of the shared list too, then marks it stale: while another footer rebuilds, the rest are
 # served this list, and a dismissed ask must not stay on screen until the next rebuild.
 uncache() {
   local c="$dir/.list-cache"
   [ -f "$c" ] && jq -c --arg p "$1" 'map(select(.pane != $p or .kind != "ask"))' "$c" > "$c.u$$" 2>/dev/null &&
     mv "$c.u$$" "$c"
-  rm -f "$c.u$$"
+  rm -f "$c.u$$" "$(seen_file "$1")"
   drop_cache
 }
 log() { printf '%s %s pid=%s ppid=%s pane=%s\n' "$(date +%T)" "$*" "$$" "$PPID" "${HERDR_PANE_ID:-}" >> "$dir/.log"; }
@@ -147,6 +152,15 @@ clear)
   rm -f "$(item "${2:?pane id}")" "$(item "${2:?pane id}").replied"
   uncache "$2"
   ;;
+seen)
+  # You went to it and left it waiting: it goes to the bottom. Reordering the shared list keeps it fresh.
+  now=$(date +%s)
+  echo "$now" > "$(seen_file "${2:?pane id}")"
+  c="$dir/.list-cache"
+  [ -f "$c" ] && jq -c --arg p "$2" --argjson now "$now" "map(if .pane == \$p then .seen = \$now else . end) | $order" "$c" \
+    > "$c.s$$" 2>/dev/null && mv "$c.s$$" "$c"
+  rm -f "$c.s$$"
+  ;;
 list)
   # Every session's footer polls this; serve a cached answer under 15s old. A stop or prompt marks the cache stale, so a new
   # ask shows at the next poll; the age bounds how late a dialog-blocked pane shows. (The mod reads this cache itself
@@ -174,6 +188,14 @@ list)
     jq -e --arg p "$p" 'index($p) != null' <<<"$live" >/dev/null || { log "list drops $p"; rm -f "$f"; }
   done
   asks=$(cat "$dir"/*.json 2>/dev/null | jq -s -c '.') || asks='[]'
+  # When you last went to each pane; a pane gone from herdr loses its mark.
+  seen='{}'
+  for f in "$dir"/.seen-*; do
+    [ -e "$f" ] || continue
+    p=${f##*/.seen-}; p=${p/_/:}
+    if [ -n "$live" ] && ! jq -e --arg p "$p" 'index($p) != null' <<<"$live" >/dev/null; then rm -f "$f"; continue; fi
+    seen=$(jq -c --arg p "$p" --argjson t "$(cat "$f")" '. + {($p): $t}' <<<"$seen" 2>/dev/null || echo "$seen")
+  done
   # An agentic session's ask is its driver's, even one the driver could not be handed: left out while that driver lives.
   for p in $(jq -r '.[].pane' <<<"$asks"); do
     d=$(driver_of "$p")
@@ -190,7 +212,7 @@ list)
   wake_drivers "$drivers"
   # A blocked pane still shows here, labelled with who owns it: its driver, else the agent in its workspace's first tab,
   # unless it is that agent, which makes it top-level.
-  jq -n -c --argjson asks "$asks" --argjson agents "$agents" --argjson spaces "$spaces" --argjson drivers "$drivers" '
+  jq -n -c --argjson asks "$asks" --argjson agents "$agents" --argjson spaces "$spaces" --argjson drivers "$drivers" --argjson seen "$seen" '
     ($agents | map(.pane_id)) as $live
     | def owner:
         . as $ag
@@ -205,7 +227,8 @@ list)
     | ($agents | map(select(.agent_status == "blocked" and (.pane_id as $p | $asked | index($p) | not)))
         | map(owner as $o
           | {pane: .pane_id, workspace: .workspace_id, kind: "blocked", ts: null, ask: blocked_text($o)} + $o)) as $b
-    | ($a + $b) | map(.label = ($spaces[.workspace] // .workspace)) | sort_by(.ts // 0)' > "$cache.$$"
+    | ($a + $b) | map(.label = ($spaces[.workspace] // .workspace) | if $seen[.pane] then .seen = $seen[.pane] else . end)
+    | '"$order" > "$cache.$$"
   # An ask cleared while this ran (a dismiss, an answer) stays out: its file is gone.
   kept=$(for f in "$dir"/*.json; do [ -e "$f" ] && jq -r .pane "$f"; done 2>/dev/null | jq -R . | jq -s -c .)
   jq -c --argjson kept "${kept:-[]}" 'map(select(.kind != "ask" or (.pane as $p | $kept | index($p))))' "$cache.$$" \

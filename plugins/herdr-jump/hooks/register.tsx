@@ -182,10 +182,13 @@ async function trackFocus($: EngineInterface): Promise<FocusHistory> {
   return now
 }
 
-/** Takes you to a waiting agent's pane; a pane herdr will not focus falls back to its workspace. */
+/** Takes you to a waiting agent's pane; a pane herdr will not focus falls back to its workspace. Gone to, it moves to the
+ * bottom of the list: one you leave waiting no longer heads it. */
 async function focusItem($: EngineInterface, item: QueueItem): Promise<void> {
   const focused = await $.process.run(['herdr', 'agent', 'focus', item.pane])
   if (focused.exitCode !== 0) await $.process.run(['herdr', 'workspace', 'focus', item.workspace])
+  await $.process.run(['bash', needsYou($), 'seen', item.pane]).catch(() => null)
+  await refreshQueue($, false).catch(() => {})
 }
 
 /** herdr's workspace, tab, pane and agent lists, joined into one row per pane. The tab and agent lists are best effort. */
@@ -403,7 +406,7 @@ export const register: Register = on => {
       })
       await $.command.register({
         name: NEXT_COMMAND,
-        description: 'Jump to the first agent waiting on you: a dialog first, then the longest wait; never this pane',
+        description: 'Go to the top of the needs-you list (dialogs and the longest waits first; ones you already went to last), never this pane',
         immediate: true,
       })
       await $.command.register({
