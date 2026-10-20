@@ -20,10 +20,10 @@ const PANE = 'herdr-jump'
 // `/jump`: a picker, or straight to a pane, workspace or match.
 const JUMP = 'jump'
 const QUEUE_PANE = 'herdr-queue'
-// `/needs-me` opens the queue pane, the same one the footer's ⚑ count opens, whether or not anyone is waiting.
-const QUEUE_COMMAND = 'needs-me'
-// `/needs-me-next` goes to the first pane in that list that is not this one.
-const NEXT_COMMAND = 'needs-me-next'
+// `/needs-me-list` opens the queue pane, the same one the footer's ⚑ count opens, whether or not anyone is waiting.
+const QUEUE_COMMAND = 'needs-me-list'
+// `/needs-me` goes to the first pane in that list that is not this one.
+const NEXT_COMMAND = 'needs-me'
 // `/jump-back` goes to the pane you were in before this one. herdr keeps no focus history, so the sessions' mods
 // watch which pane is focused and keep the last two in a file all of them share. One session does the watching: it holds
 // a lease it renews on each poll, and another takes over once the lease is FOCUS_LEASE_MS old.
@@ -400,13 +400,13 @@ export const register: Register = on => {
         immediate: true,
       })
       await $.command.register({
-        name: QUEUE_COMMAND,
-        description: 'Open the list of agents waiting on you: asks and dialogs, click one to go there',
+        name: NEXT_COMMAND,
+        description: 'Go to the top of the needs-you list (dialogs and the longest waits first; ones you already went to last), never this pane',
         immediate: true,
       })
       await $.command.register({
-        name: NEXT_COMMAND,
-        description: 'Go to the top of the needs-you list (dialogs and the longest waits first; ones you already went to last), never this pane',
+        name: QUEUE_COMMAND,
+        description: 'Open the list of agents waiting on you: asks and dialogs, click one to go there',
         immediate: true,
       })
       await $.command.register({
