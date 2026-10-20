@@ -1,6 +1,6 @@
 # Review map and reply format
 
-One source for `/review-map` (writes the map), `/review-address` (answers it) and `/review-verify` (judges both). `scripts/lib.cjs` parses the map; `scripts/check-reply.cjs` checks the reply. Change this file and those together.
+One source for `/vet:map` (writes the map), `/vet:address` (answers it) and `/vet:verify` (judges both). `scripts/lib.cjs` parses the map; `scripts/check-reply.cjs` checks the reply. Change this file and those together.
 
 ## Item ids
 
@@ -26,7 +26,7 @@ One source for `/review-map` (writes the map), `/review-address` (answers it) an
 ## Map skeleton
 
 ````markdown
-<!-- review-map -->
+<!-- vet-map -->
 ## Review map · <pr-ref> · <YYYY-MM-DD>
 
 **Head:** <sha>
@@ -110,16 +110,16 @@ Empty sections stay, with "None". Wording comes from the seats: shortened, never
 
 ## Trusted posters
 
-Maps, seat reports and replies count only from logins in `.review/posters` (one per line, read from the base branch), else from comments whose `authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`. A CI app that runs these skills goes in `.review/posters`. `.review/**` is RED, so changing the list needs a human. The PR author is usually trusted by default, so their account (or an agent on it) can still post a fake map; to close that, post from a bot or CI account and list only it.
+Maps, seat reports and replies count only from logins in `.vet/posters` (one per line, read from the base branch), else from comments whose `authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`. A CI app that runs these skills goes in `.vet/posters`. `.vet/**` is RED, so changing the list needs a human. The PR author is usually trusted by default, so their account (or an agent on it) can still post a fake map; to close that, post from a bot or CI account and list only it.
 
 ## Seat reports
 
-Posted as their own comment(s) right after the map, first line `<!-- review-map-seats <head sha> -->`, each seat's report verbatim (auditor, reviewer or litigation rounds, voters), each in its own ````text fence. Split across comments at 60,000 characters; GitHub caps a comment at 65,536. The map links the first. They let `/review-verify` see that the map came from the seats and wasn't softened.
+Posted as their own comment(s) right after the map, first line `<!-- vet-map-seats <head sha> -->`, each seat's report verbatim (auditor, reviewer or litigation rounds, voters), each in its own ````text fence. Split across comments at 60,000 characters; GitHub caps a comment at 65,536. The map links the first. They let `/vet:verify` see that the map came from the seats and wasn't softened.
 
 ## Reply skeleton
 
 ````markdown
-<!-- review-address -->
+<!-- vet-address -->
 Response to the review map posted <date>. All fixes pushed.
 **Head:** <sha>
 **Rounds-to-pass:** <n>
