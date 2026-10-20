@@ -119,15 +119,7 @@ stop)
   fi
   # A turn without the section leaves an existing item alone: agents also end
   # turns woken by background tasks, and those turns say nothing about the ask.
-  # Only a prompt in the pane, a dismiss, or a relayed reply clears it. A relayed
-  # reply (an answer typed from another pane) leaves a .replied marker; the turn
-  # that acts on it, ending with no new section, closes the ask.
-  if [ -n "$(printf '%s' "$ask" | tr -d '[:space:]')" ]; then
-    rm -f "$(item "$HERDR_PANE_ID").replied"
-  elif [ -e "$(item "$HERDR_PANE_ID").replied" ]; then
-    log "stop clears $HERDR_PANE_ID (relayed reply answered)"
-    rm -f "$(item "$HERDR_PANE_ID")" "$(item "$HERDR_PANE_ID").replied"
-  fi
+  # Only a prompt in the pane or a dismiss clears it.
   [ "$({ cksum < "$(item "$HERDR_PANE_ID")"; } 2>/dev/null)" = "$before" ] || drop_cache
   ;;
 prompt)
@@ -137,21 +129,17 @@ prompt)
   # reach its driver again; machine prompts keep the repeat guard (route_to_driver).
   case "$p" in ''|'<'*|'['*|/*|'This session is being continued'*) ;; *) rm -f "$dir/.routed-${HERDR_PANE_ID//:/_}" ;; esac
   [ -e "$(item "$HERDR_PANE_ID")" ] || exit 0
-  # Ticker nudges, peer messages and task wake-ups arrive as prompts too; only a
-  # prompt typed into the pane the person has focused counts as their answer.
-  focused=$("$herdr" agent get "$HERDR_PANE_ID" 2>/dev/null | jq -r '.result.agent.focused // false' 2>/dev/null)
-  if [ "$focused" != true ]; then
-    # An unfocused plain-text prompt is an answer relayed from another pane: mark it
-    # and let the turn that acts on it close the ask (see stop). Machine prompts are
-    # not answers: "[inbox]" nudges, <tagged> wrappers, /commands, continuations.
-    case "$p" in
-      ''|'<'*|'['*|/*|'This session is being continued'*) log "prompt kept $HERDR_PANE_ID (not focused)" ;;
-      *) log "prompt marks $HERDR_PANE_ID replied (not focused)"; : > "$(item "$HERDR_PANE_ID").replied" ;;
-    esac
-    exit 0
-  fi
+  # Ticker nudges, peer messages and task wake-ups arrive as prompts too: "[inbox]" nudges, <tagged> wrappers,
+  # /commands, continuations. Those answer nothing unless typed into the pane the person has focused. Plain text
+  # answers wherever it came from: typed, relayed from another pane, or sent from a client herdr does not count as
+  # focus (a phone, a second window); waiting for the turn to end only left a cleared ask on screen.
+  case "$p" in
+    ''|'<'*|'['*|/*|'This session is being continued'*)
+      focused=$("$herdr" agent get "$HERDR_PANE_ID" 2>/dev/null | jq -r '.result.agent.focused // false' 2>/dev/null)
+      [ "$focused" = true ] || { log "prompt kept $HERDR_PANE_ID (not focused)"; exit 0; } ;;
+  esac
   log "prompt clears $HERDR_PANE_ID"
-  rm -f "$(item "$HERDR_PANE_ID")" "$(item "$HERDR_PANE_ID").replied"
+  rm -f "$(item "$HERDR_PANE_ID")" "$(item "$HERDR_PANE_ID").replied"   # .replied: left by builds before 0.14.1
   uncache "$HERDR_PANE_ID"
   ;;
 clear)

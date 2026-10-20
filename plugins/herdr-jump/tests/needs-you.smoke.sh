@@ -34,12 +34,10 @@ ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fai
 
 echo '{"prompt":"[inbox] nudge"}' | STUB_FOCUSED=false ny prompt
 ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "a machine prompt in an unfocused pane leaves the ask"
-test ! -e "$tmp/.herdr-queue/t/w8_p2.json.replied" || fail "a machine prompt is not a relayed answer"
 
 echo '{"prompt":"yes, approved"}' | STUB_FOCUSED=false ny prompt
-test -e "$tmp/.herdr-queue/t/w8_p2.json.replied" || fail "a relayed answer marks the ask"
-echo "$none" | ny stop
-test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "the turn that acts on a relayed answer closes the ask"
+test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "a plain-text answer clears the ask at once, focused or not"
+ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 0' >/dev/null || fail "a cleared ask leaves the shared list at once"
 
 echo "$ask" | ny stop
 echo '{"prompt":"yes, approved"}' | STUB_FOCUSED=true ny prompt

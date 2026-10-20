@@ -248,11 +248,14 @@ async function pollFocus($: EngineInterface): Promise<void> {
 /**
  * The queue's two writers are a Stop hook and a UserPromptSubmit hook in the script's original setup. This plugin hands
  * the script the same JSON instead, so no hook settings are needed. Outside herdr the script does nothing; it runs in
- * the session's directory. Not awaited: a slow herdr must not hold a turn.
+ * the session's directory. Not awaited: a slow herdr must not hold a turn. Once it is done the footer reads the list
+ * again, so an answered ask leaves it at once rather than at the next poll.
  */
 function feedQueue($: EngineInterface, action: 'stop' | 'prompt', input: Record<string, unknown>): void {
   if (pane === null) return
-  void $.process.run(['bash', needsYou($), action], { stdin: JSON.stringify(input), timeoutMs: 20_000 }).catch(() => {})
+  void $.process.run(['bash', needsYou($), action], { stdin: JSON.stringify(input), timeoutMs: 20_000 })
+    .then(() => refreshQueue($, false))
+    .catch(() => {})
 }
 
 /** A file in the script's queue folder for this herdr server. */
@@ -265,20 +268,11 @@ const NEEDS_YOU_HEADING = /^#+\s*⚑\s*needs you/im
 
 /**
  * True when the script's `stop` could change something after a turn that ended with `answer`. Without a section it
- * routes nothing and writes no item; all it can do is close an ask a relayed reply answered, which that reply marks with
- * a `.replied` file. Most turns have neither, and skip a dozen short processes. An empty answer still goes: the script
+ * routes nothing and writes no item, so most turns skip a dozen short processes. An empty answer still goes: the script
  * then looks for the text in the transcript.
  */
-async function isStopNeeded($: EngineInterface, answer: string): Promise<boolean> {
-  if (pane === null) return false
-  if (answer === '' || NEEDS_YOU_HEADING.test(answer)) return true
-  if (!(await $.env.get('HOME'))) return true
-  try {
-    await $.fs.stat(await queueFile($, `${pane.replaceAll(':', '_')}.json.replied`))
-    return true
-  } catch {
-    return false
-  }
+function isStopNeeded(answer: string): boolean {
+  return pane !== null && (answer === '' || NEEDS_YOU_HEADING.test(answer))
 }
 
 /** True while some session's script holds the rebuild lock (a lock over LIST_LOCK_STALE_MS old was left by a killed run). */
@@ -434,7 +428,7 @@ export const register: Register = on => {
     const result = await next(e)
     if (e.agentId === undefined && !e.isAborted) {
       const answer = e.answer
-      void isStopNeeded($, answer).then(isNeeded => isNeeded && feedQueue($, 'stop', { last_assistant_message: answer }), () => {})
+      if (isStopNeeded(answer)) feedQueue($, 'stop', { last_assistant_message: answer })
     }
     return result
   })
