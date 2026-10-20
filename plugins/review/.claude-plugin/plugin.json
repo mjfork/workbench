@@ -1,0 +1,11 @@
+{
+  "name": "review",
+  "version": "0.1.0",
+  "description": "Review a change by its decisions, not its lines: /review-map has a fresh Opus auditor map the decisions, blast radius, door, contradictions and test gaming, an independent reviewer verdict every row and three voters cut the noise; /review-address fixes the MUST-FIX items with a re-check per fix and posts one checked reply; /review-verify has a fresh agent judge that every item was answered honestly before merge.",
+  "author": {
+    "name": "Michael Fork"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/mjfork/workbench",
+  "repository": "https://github.com/mjfork/workbench"
+}
