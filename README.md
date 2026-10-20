@@ -75,7 +75,7 @@ Sometimes you want a summary and a clear ask. Sometimes you're watching and want
 | `cache-timer` | Cache countdown, expired-cache confirm card, [handoff note](docs/handoff.md) | nothing |
 | `ctx-bar` | Context bar by tool; hover cards; `/ctxbar` | herdr, `ctx-heavy` |
 | `ctx-heavy` | Your heaviest sessions across herdr, with cache time left; click to go | herdr, `herdr-jump`; shows sessions that run `ctx-bar`; cache times from `cache-timer`; skips `turn-mode` agentic sessions |
-| `herdr-jump` | Pane label; needs-you queue (`⚑ N`, `/needs-me`, `/needs-me-next`); `/jump`, `/jump-back` | herdr, `bash`, `jq` |
+| `herdr-jump` | Pane label; needs-you queue (`⚑ N`, `/needs-me`, `/needs-me-next`), redrawn when you focus a pane; `/jump`, `/jump-back` | herdr, `bash`, `jq`, `nc` |
 | `turn-mode` | How a turn ends: async, real-time or agentic | herdr, `ctx-bar` |
 | `review` | Review a change by its decisions, not its lines: `/review-map`, `/review-address`, `/review-verify` | `gh`, `git`, Node 22+; not part of `cockpit` |
 
@@ -146,6 +146,7 @@ Using a profile in `CLAUDE_CONFIG_DIR`? Copy the script into that folder instead
 - Claude Code with plugin hooks. Plugin files live under `CLAUDE_CONFIG_DIR`, or `~/.claude` when it is unset.
 - [herdr](https://herdr.dev) on `PATH`, with sessions started inside it, for everything except `cache-timer`.
 - `bash` and `jq` for the needs-you queue. `herdr-jump` feeds it each finished turn and each prompt itself, so there are no hook settings to add. The queue lives in `~/.herdr-queue/`, readable by you only.
+- `nc` with `-U` (macOS's own; `netcat-openbsd` on Linux) so a footer redraws its queue the moment you focus its pane. Without it, a footer refreshes on your first keystroke there instead.
 
 <details>
 <summary>Removing</summary>

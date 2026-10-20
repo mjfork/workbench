@@ -134,3 +134,58 @@ test('a rebuild lock over 30 seconds old was left by a killed run: the poll star
   await settle()
   expect(e.scriptLists()).toBe(1)
 })
+
+// Claude Code has no terminal-focus event: herdr's, through bin/focus-watch.sh, is how an asleep footer learns its pane
+// was focused, so asks cleared from another pane leave its footer at once.
+function focusChild(on: On) {
+  const starts: string[][] = []
+  let focus: (() => void) | null = null
+  let end: (() => void) | null = null
+  on('process.spawn', async function* (_$, e) {
+    starts.push([...e.argv])
+    for (;;) {
+      const next = await new Promise<'focus' | 'end'>(r => { focus = () => r('focus'); end = () => r('end') })
+      if (next === 'end') return { value: { code: 0, signal: null } }
+      yield { stream: 'stdout' as const, text: 'focused\n' }
+    }
+  } as never)
+  return { starts, focus: () => focus?.(), end: () => end?.() }
+}
+
+test('an asleep footer refreshes the moment its pane is focused, with no poll before it', async ($, on) => {
+  const e = engine(on, { [CACHE]: { text: JSON.stringify(QUEUE), mtimeMs: 0 } })
+  const child = focusChild(on)
+  await $.session.start(START)
+  await settle()
+  expect(child.starts.length).toBe(1)
+  expect(child.starts[0]![1]!.endsWith('/bin/focus-watch.sh')).toBe(true)
+  // Asleep: time passes and nothing is asked of herdr or the script.
+  await e.clock.advance(60_000)
+  await settle()
+  expect(e.scriptLists()).toBe(0)
+  child.focus()
+  await settle()
+  expect(e.scriptLists()).toBe(1)
+})
+
+test('one focus child per session, started again on the next wake once it ends', async ($, on) => {
+  const e = engine(on)
+  const child = focusChild(on)
+  await $.session.start(START)
+  await $.prompt.edit(KEY)
+  await settle()
+  expect(child.starts.length).toBe(1)
+  child.end()
+  await settle()
+  // Awake already: a keystroke notes activity and starts nothing.
+  await $.prompt.edit(KEY)
+  await settle()
+  expect(child.starts.length).toBe(1)
+  // Ten idle minutes put it to sleep; the next wake starts the ended child again, once.
+  for (let i = 0; i < 125; i++) await e.clock.advance(5000)
+  await settle()
+  await $.prompt.edit(KEY)
+  await $.prompt.edit(KEY)
+  await settle()
+  expect(child.starts.length).toBe(2)
+})
