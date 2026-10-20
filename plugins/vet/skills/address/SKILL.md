@@ -1,9 +1,9 @@
 ---
-name: review-address
-description: "Answer a posted review map: fix every MUST-FIX, each round re-checked by a fresh reviewer (verify, don't hunt), dispose of every other item, and post one reply that names a closed answer for each, checked by script before it posts. Escalates what only a human can decide. Use after /review-map has posted, or when /review-verify failed a reply. /review-address [<pr>] [--auto]. Then /review-verify."
+name: address
+description: "Answer a posted review map: fix every MUST-FIX, each round re-checked by a fresh reviewer (verify, don't hunt), dispose of every other item, and post one reply that names a closed answer for each, checked by script before it posts. Escalates what only a human can decide. Use after /vet:map has posted, or when /vet:verify failed a reply. /vet:address [<pr>] [--auto]. Then /vet:verify."
 ---
 
-# /review-address
+# /vet:address
 
 Every item on the map gets exactly one closed answer; the reply proves it. No human approves fixes; a human sees only escalations. Never merges, never edits the map.
 
@@ -13,9 +13,9 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/map-format.md` (ids, allowed answers, rep
 
 ## 1. Load the map
 
-`gh pr checkout <n>`; `git fetch origin <base>`. Working dir: `R="$(git rev-parse --absolute-git-dir)/review/<n>"; mkdir -p "$R"`.
+`gh pr checkout <n>`; `git fetch origin <base>`. Working dir: `R="$(git rev-parse --absolute-git-dir)/vet/<n>"; mkdir -p "$R"`.
 
-Newest comment by a trusted poster (`map-format.md` → "Trusted posters") whose first line is `<!-- review-map -->` (`gh pr view <n> --json author,baseRefName,comments,commits,headRefOid`). Save it to `$R/map.md`; list items with `parseMap` (see `/review-map` stage 4). Note `depth`: round cap is **2** light, **5** deep. A map whose Head is no longer on the PR → stop, run `/review-map`.
+Newest comment by a trusted poster (`map-format.md` → "Trusted posters") whose first line is `<!-- vet-map -->` (`gh pr view <n> --json author,baseRefName,comments,commits,headRefOid`). Save it to `$R/map.md`; list items with `parseMap` (see `/vet:map` stage 4). Note `depth`: round cap is **2** light, **5** deep. A map whose Head is no longer on the PR → stop, run `/vet:map`.
 
 ## 2. Plan each item
 
@@ -59,7 +59,7 @@ Post only on `OK`. A failure is a missing decision, not a wording problem: decid
 
 Human present → show the reply, ask once: *"Post this reply on #<n>?"* `--auto` → post. `gh pr comment <n> --body-file "$R/reply.md"`.
 
-Then stop. No escalations → next is `/review-verify`. Escalations open → the human answers, then `/review-address` runs again. Pushing code now voids the reply.
+Then stop. No escalations → next is `/vet:verify`. Escalations open → the human answers, then `/vet:address` runs again. Pushing code now voids the reply.
 
 ## Red flags
 

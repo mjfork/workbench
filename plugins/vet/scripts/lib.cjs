@@ -4,11 +4,11 @@
 const { execFileSync } = require("node:child_process");
 const path = require("node:path");
 
-const MAP_MARKER = /<!--\s*review-map\s*-->/i;
-const REPLY_MARKER = /<!--\s*review-address\s*-->/i;
-const VERDICT_MARKER = /<!--\s*review-verify:\s*(pass|fail)\s*-->/i;
+const MAP_MARKER = /<!--\s*vet-map\s*-->/i;
+const REPLY_MARKER = /<!--\s*vet-address\s*-->/i;
+const VERDICT_MARKER = /<!--\s*vet-verify:\s*(pass|fail)\s*-->/i;
 
-// Path-identifiable RED zones. A repo replaces them with .review/red-paths.
+// Path-identifiable RED zones. A repo replaces them with .vet/red-paths.
 const DEFAULT_RED = [
   "**/migrations/**", "**/*.sql",
   "**/auth/**", "**/*auth*.*", "**/*session*.*", "**/*permission*.*",
@@ -18,14 +18,14 @@ const DEFAULT_RED = [
   "**/openapi*.*", "**/*.proto", "**/design-system/**", "**/tokens/**",
   "**/AGENTS.md", "**/CLAUDE.md", "**/SKILL.md", "**/.claude/**", "**/.claude-plugin/**",
   "**/skills/**", "**/commands/**", "**/agents/**", "**/*prompt*", "**/*brief*",
-  ".review/**",
+  ".vet/**",
 ];
 
 // Read from the base ref, never the PR's tree, so a PR can't shrink its own RED list.
 function readRedGlobs(cwd, ref) {
   let text;
   try {
-    text = execFileSync("git", ["show", `${ref}:.review/red-paths`], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    text = execFileSync("git", ["show", `${ref}:.vet/red-paths`], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   } catch {
     return DEFAULT_RED;
   }

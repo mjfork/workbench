@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Checks a /review-address reply against its review map before it is posted,
-// and again in /review-verify. Every map item gets exactly one block, each
+// Checks a /vet:address reply against its review map before it is posted,
+// and again in /vet:verify. Every map item gets exactly one block, each
 // block one disposition its kind allows. Prints failures with line numbers;
 // exits 1 on any.
 //
@@ -98,7 +98,7 @@ function check({ items, reply, commits, closed = false }) {
   const lines = reply.split(/\r?\n/);
   const onPr = (sha) => commits.some((c) => c.toLowerCase().startsWith(sha.toLowerCase()));
 
-  if (!lines.some((l) => REPLY_MARKER.test(l.trim()))) err(1, "the reply has no <!-- review-address --> marker line");
+  if (!lines.some((l) => REPLY_MARKER.test(l.trim()))) err(1, "the reply has no <!-- vet-address --> marker line");
   const headLine = lines.findIndex((l) => /^\*\*Head:\*\*/.test(l));
   const head = headLine < 0 ? null : lines[headLine].match(/^\*\*Head:\*\*\s*`?([0-9a-f]{7,40})`?\s*$/i)?.[1];
   if (!head) err(headLine + 1 || 1, "the reply needs a **Head:** <sha> line naming the pushed head it answers for");
@@ -147,7 +147,7 @@ function check({ items, reply, commits, closed = false }) {
     if (spec.quote && words(m[spec.quote]).length < 3) err(line, `${b.id} ticket quote is too short; quote what the ticket now says`);
     if (spec.question) {
       if (words(m[spec.question]).length < 4) err(line, `${b.id} escalation must ask the human a specific question`);
-      if (closed) err(line, `${b.id} is escalated and not yet decided; a human answers it, then /review-address runs again`);
+      if (closed) err(line, `${b.id} is escalated and not yet decided; a human answers it, then /vet:address runs again`);
     }
   }
 

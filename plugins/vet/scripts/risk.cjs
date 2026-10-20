@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Blast radius and depth by script, never by a model: which changed files are
-// RED (.review/red-paths on the base ref, else the defaults in lib.cjs) and
+// RED (.vet/red-paths on the base ref, else the defaults in lib.cjs) and
 // whether the run is deep (any RED file, or more than 1,000 changed lines).
 //
 //   node risk.cjs --base <ref> [--head <ref>]                 prints JSON
