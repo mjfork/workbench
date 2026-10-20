@@ -102,6 +102,19 @@ ny clear w8:p2
 ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 0' >/dev/null || fail "a dismissed ask leaves the list served during a rebuild"
 rmdir "$tmp/.herdr-queue/t/.list-lock"
 echo "$ask" | ny stop; touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"; ny list >/dev/null
+# An item you went to and left waiting moves to the bottom, in the shared list at once and in every rebuild; a dialog too.
+echo "$other" | HERDR_PANE_ID=w9:p1 HERDR_WORKSPACE_ID=w9 ny stop
+touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
+first() { ny list | jq -r '.[0].pane'; }
+last() { ny list | jq -r '.[-1].pane'; }
+[ "$(first)" = w8:p3 ] || fail "a dialog heads the list"
+ny seen w8:p3; [ "$(last)" = w8:p3 ] || fail "a dialog you went to moves to the bottom"
+sleep 1; ny seen w8:p2; [ "$(last)" = w8:p2 ] || fail "an ask you went to moves to the bottom"
+touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
+[ "$(last)" = w8:p2 ] || fail "a rebuild keeps it at the bottom"
+ny clear w8:p2; test ! -e "$tmp/.herdr-queue/t/.seen-w8_p2" || fail "a cleared ask loses its mark"
+ny clear w9:p1; rm -f "$tmp/.herdr-queue/t/.seen-w8_p3"
+echo "$ask" | ny stop; touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"; ny list >/dev/null
 # A lock left by a killed rebuild does not stop the list for good.
 mkdir "$tmp/.herdr-queue/t/.list-lock"; touch -t 200001010000 "$tmp/.herdr-queue/t/.list-lock" "$tmp/.herdr-queue/t/.list-cache"
 ny list >/dev/null; ny list >/dev/null
