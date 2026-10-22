@@ -268,14 +268,18 @@ const queueFile = async ($: EngineInterface, name: string) =>
 // The script's own test for a "Needs you" heading (awk, case-blind, on each line of the message); `\s` here also takes
 // spaces awk would not, which only starts the script more often.
 const NEEDS_YOU_HEADING = /^#+\s*⚑\s*needs you/im
+// A turn that takes back its own ask, settled elsewhere: `## ✓ Resolved`, the script's test likewise.
+const RESOLVED_HEADING = /^#+\s*(✓\s*)?resolved/im
+// A turn a `!` command started: it raises no prompt.submit, and its turn.start text is the command's output.
+const BASH_TURN = /^<bash-(input|stdout|stderr)>/
 
 /**
- * True when the script's `stop` could change something after a turn that ended with `answer`. Without a section it
- * routes nothing and writes no item, so most turns skip a dozen short processes. An empty answer still goes: the script
+ * True when the script's `stop` could change something after a turn that ended with `answer`. Without a section or a
+ * Resolved heading it routes nothing and writes or clears no item, so most turns skip a dozen short processes. An empty answer still goes: the script
  * then looks for the text in the transcript.
  */
 function isStopNeeded(answer: string): boolean {
-  return pane !== null && (answer === '' || NEEDS_YOU_HEADING.test(answer))
+  return pane !== null && (answer === '' || NEEDS_YOU_HEADING.test(answer) || RESOLVED_HEADING.test(answer))
 }
 
 /** True while some session's script holds the rebuild lock (a lock over LIST_LOCK_STALE_MS old was left by a killed run). */
@@ -455,6 +459,8 @@ export const register: Register = on => {
   })
   on('turn.start', ($, e, next) => {
     wake($)
+    // A `!` command is the person's answer as much as a typed prompt is ("Reply with: `! <command>`").
+    if (BASH_TURN.test(e.text)) feedQueue($, 'prompt', { prompt: '! (a shell command)' })
     return next(e)
   })
   on('tool.call', ($, e, next) => {

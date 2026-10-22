@@ -6,7 +6,8 @@
 #   needs-you.sh stop     Stop hook: enqueue this pane's section (a turn without one changes nothing)
 #   needs-you.sh prompt   UserPromptSubmit hook: someone answered; clear this pane
 #   needs-you.sh list     JSON array: queued asks + agents blocked on a dialog
-#   needs-you.sh clear <pane_id>
+#   needs-you.sh clear <pane_id> [reason]   the queue's dismiss (reason: dismissed)
+#   needs-you.sh withdraw   an agent takes back its own ask, settled elsewhere (this pane)
 #   needs-you.sh seen <pane_id>   you went to it: it moves to the bottom until it asks again
 #
 # A session in agentic turn mode ($CLAUDE_CONFIG_DIR/ctx/mode/<pane>.json, the turn-mode mod)
@@ -49,7 +50,15 @@ uncache() {
   rm -f "$c.u$$" "$(seen_file "$1")"
   drop_cache
 }
-log() { printf '%s %s pid=%s ppid=%s pane=%s\n' "$(date +%T)" "$*" "$$" "$PPID" "${HERDR_PANE_ID:-}" >> "$dir/.log"; }
+# Every add and clear is logged, with its reason, so "did that ask reach the queue, and why did it leave?" has an answer.
+log() { printf '%s %s pid=%s ppid=%s pane=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" "$$" "$PPID" "${HERDR_PANE_ID:-}" >> "$dir/.log"; }
+# Removes a pane's ask, logged with why: answered, dismissed, withdrawn or gone.
+forget() {
+  [ -e "$(item "$1")" ] || return 0
+  log "clear $1 $2"
+  rm -f "$(item "$1")" "$(item "$1").replied"   # .replied: left by builds before 0.14.1
+  uncache "$1"
+}
 item() { printf '%s/%s.json' "$dir" "${1//:/_}"; }
 # The driver pane of an agentic session (turn-mode), else nothing.
 driver_of() {
@@ -120,11 +129,14 @@ stop)
     jq -n --arg pane "$HERDR_PANE_ID" --arg ws "${HERDR_WORKSPACE_ID:-}" --arg ask "$ask" \
       --arg cwd "$PWD" --argjson ts "$(date +%s)" \
       '{pane: $pane, workspace: $ws, ask: $ask, cwd: $cwd, ts: $ts}' > "$(item "$HERDR_PANE_ID").tmp" &&
-      mv "$(item "$HERDR_PANE_ID").tmp" "$(item "$HERDR_PANE_ID")"
+      mv "$(item "$HERDR_PANE_ID").tmp" "$(item "$HERDR_PANE_ID")" &&
+      log "add $HERDR_PANE_ID ${HERDR_SESSION:-default}: $(printf '%s' "$ask" | grep -m1 . | head -c 120)"
+  elif [ -z "$(printf '%s' "$ask" | tr -d '[:space:]')" ] && printf '%s\n' "$msg" | grep -qiE '^#+[[:space:]]*(✓[[:space:]]*)?resolved'; then
+    # The agent takes back its own ask: a "## ✓ Resolved" heading and no new section.
+    forget "$HERDR_PANE_ID" withdrawn
   fi
-  # A turn without the section leaves an existing item alone: agents also end
-  # turns woken by background tasks, and those turns say nothing about the ask.
-  # Only a prompt in the pane or a dismiss clears it.
+  # A turn without the section (or a Resolved heading) leaves an existing item alone: agents also end turns woken by
+  # background tasks, and those turns say nothing about the ask.
   [ "$({ cksum < "$(item "$HERDR_PANE_ID")"; } 2>/dev/null)" = "$before" ] || drop_cache
   ;;
 prompt)
@@ -134,23 +146,26 @@ prompt)
   # reach its driver again; machine prompts keep the repeat guard (route_to_driver).
   case "$p" in ''|'<'*|'['*|/*|'This session is being continued'*) ;; *) rm -f "$dir/.routed-${HERDR_PANE_ID//:/_}" ;; esac
   [ -e "$(item "$HERDR_PANE_ID")" ] || exit 0
-  # Ticker nudges, peer messages and task wake-ups arrive as prompts too: "[inbox]" nudges, <tagged> wrappers,
-  # /commands, continuations. Those answer nothing unless typed into the pane the person has focused. Plain text
-  # answers wherever it came from: typed, relayed from another pane, or sent from a client herdr does not count as
-  # focus (a phone, a second window); waiting for the turn to end only left a cleared ask on screen.
+  # The mod hands over only prompts whose origin is the person (typed, sent with herdr, a `!` command). Automation
+  # reaches a pane by typing too, so text shaped like a machine's never answers, focused or not: "[inbox]" and
+  # "[alert]" lines, <tagged> wrappers, continuations. A /command answers only in the pane the person has focused.
+  # Plain text answers wherever it came from: typed, relayed from another pane, or a client herdr does not count as
+  # focus (a phone, a second window).
   case "$p" in
-    ''|'<'*|'['*|/*|'This session is being continued'*)
+    ''|'<'*|'['*|'This session is being continued'*) log "kept $HERDR_PANE_ID machine prompt: $(printf '%s' "$p" | head -c 40)"; exit 0 ;;
+    /*)
       focused=$("$herdr" agent get "$HERDR_PANE_ID" 2>/dev/null | jq -r '.result.agent.focused // false' 2>/dev/null)
-      [ "$focused" = true ] || { log "prompt kept $HERDR_PANE_ID (not focused)"; exit 0; } ;;
+      [ "$focused" = true ] || { log "kept $HERDR_PANE_ID command in an unfocused pane"; exit 0; } ;;
   esac
-  log "prompt clears $HERDR_PANE_ID"
-  rm -f "$(item "$HERDR_PANE_ID")" "$(item "$HERDR_PANE_ID").replied"   # .replied: left by builds before 0.14.1
-  uncache "$HERDR_PANE_ID"
+  forget "$HERDR_PANE_ID" answered
   ;;
 clear)
-  log "clear $2"
-  rm -f "$(item "${2:?pane id}")" "$(item "${2:?pane id}").replied"
-  uncache "$2"
+  forget "${2:?pane id}" "${3:-dismissed}"
+  ;;
+withdraw)
+  # An agent takes back its own ask, settled some other way: needs-you.sh withdraw (from its own pane).
+  [ -n "${HERDR_PANE_ID:-}" ] || { echo "needs-you.sh withdraw: run it from the agent's own herdr pane" >&2; exit 2; }
+  forget "$HERDR_PANE_ID" withdrawn
   ;;
 seen)
   # You went to it and left it waiting: it goes to the bottom. Reordering the shared list keeps it fresh.
@@ -185,7 +200,7 @@ list)
   [ -n "$live" ] && for f in "$dir"/*.json; do
     [ -e "$f" ] || continue
     p=$(jq -r .pane "$f")
-    jq -e --arg p "$p" 'index($p) != null' <<<"$live" >/dev/null || { log "list drops $p"; rm -f "$f"; }
+    jq -e --arg p "$p" 'index($p) != null' <<<"$live" >/dev/null || { log "clear $p gone"; rm -f "$f" "$(seen_file "$p")"; }
   done
   asks=$(cat "$dir"/*.json 2>/dev/null | jq -s -c '.') || asks='[]'
   # When you last went to each pane; a pane gone from herdr loses its mark.
