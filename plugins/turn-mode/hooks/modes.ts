@@ -40,6 +40,7 @@ const needsYou = () => [
   '**Reply with:** <exactly what to type: `1`, `yes`, or `! <command>`>',
   '**Unblocks:** <what proceeds once it is answered>',
   `- The heading is machine-read (a Stop hook queues this pane for ${PERSON}); spell it exactly. The section stands alone: ${PERSON} reads only it, cold, so name files, PRs and tickets by ID or link, in plain words. One option per numbered line. Several asks: **Ask 1** / **Ask 2**, each with its own **Reply with**.`,
+  `- An ask settled some other way (a peer's message, another pane, you found the answer): end the next turn with a \`## ✓ Resolved\` line saying how, and no ⚑ section. It takes the ask off ${PERSON}'s queue.`,
 ]
 
 const STATUS = 'exactly one of `DONE`, `BLOCKED: <reason>`, `NEEDS-INPUT: <reason>`'

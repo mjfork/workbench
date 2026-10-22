@@ -78,12 +78,12 @@ One list, shared by every session in a herdr server, of the panes waiting on you
 | | |
 |---|---|
 | **Gets in** | An agent ends its turn with a `## ⚑ Needs you` section (`turn-mode`'s async mode asks for one whenever the turn waits on you), or a pane is stuck on a permission or question dialog |
-| **Leaves** | You answer in that pane, typed there or sent from anywhere else; you click **dismiss**; or the pane closes |
-| **Stays** | A later turn without the section leaves the ask alone: background wake-ups end turns too, and they say nothing about it |
+| **Leaves** | You answer in that pane: a typed reply, a reply sent from elsewhere, or a `! <command>`. You click **dismiss**. The agent takes it back: a turn with a `## ✓ Resolved` heading, or `needs-you.sh withdraw` from its own pane. Or the pane closes |
+| **Stays** | A later turn with neither heading leaves the ask alone: background wake-ups end turns too, and they say nothing about it. So does a machine-shaped line typed into the pane (`[alert] …`, `<tag>…`), even while you're looking at it; a `/command` counts only in the pane you have focused |
 | **Order** | Dialogs and the longest waits first. Go to one and leave it waiting, and it moves to the bottom until it asks again |
 | **Driven sessions** | A session another agent drives (turn-mode's agentic) sends its asks to that agent, not to you. A dialog it's stuck on stays in your list, with the driver named as its owner |
 
-Run `/needs-me` to go to the top item that isn't this pane, or click `⚑ N` (or run `/needs-me-list`) to see the list. Something look wrong? Every add and clear is logged in `~/.herdr-queue/<herdr session>/.log`.
+Run `/needs-me` to go to the top item that isn't this pane, or click `⚑ N` (or run `/needs-me-list`) to see the list. Something look wrong? Every add and clear is logged, with its UTC date and reason (answered, dismissed, withdrawn, gone), in `~/.herdr-queue/<herdr session>/.log`.
 
 ## Commands
 

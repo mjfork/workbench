@@ -43,6 +43,35 @@ echo "$ask" | ny stop
 echo '{"prompt":"yes, approved"}' | STUB_FOCUSED=true ny prompt
 test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "the person's answer in the focused pane clears the ask"
 
+# Automation types into panes too: a machine-shaped line never answers, even in the focused pane. A /command does there.
+q="$tmp/.herdr-queue/t/w8_p2.json"
+echo "$ask" | ny stop
+echo '{"prompt":"[alert] id:42 build failed"}' | STUB_FOCUSED=true ny prompt
+test -e "$q" || fail "a machine line in the focused pane leaves the ask"
+echo '{"prompt":"/foo"}' | STUB_FOCUSED=false ny prompt
+test -e "$q" || fail "a /command in an unfocused pane leaves the ask"
+echo '{"prompt":"/foo"}' | STUB_FOCUSED=true ny prompt
+test ! -e "$q" || fail "a /command in the focused pane answers it"
+# A ! command is an answer: the mod hands it over as one.
+echo "$ask" | ny stop
+echo '{"prompt":"! (a shell command)"}' | STUB_FOCUSED=false ny prompt
+test ! -e "$q" || fail "a ! command answers the ask"
+# An agent takes back its own ask: a Resolved heading, or needs-you.sh withdraw. A turn with neither leaves it.
+echo "$ask" | ny stop
+echo '{"last_assistant_message":"Settled by the peer.\n\n## ✓ Resolved\nThe peer answered it."}' | ny stop
+test ! -e "$q" || fail "a Resolved heading withdraws the ask"
+echo "$ask" | ny stop
+ny withdraw
+test ! -e "$q" || fail "needs-you.sh withdraw takes back this pane's ask"
+# Every add and clear is logged with a full UTC date and its reason.
+grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z add w8:p2 t: \*\*Ask:\*\* ok\?' "$tmp/.herdr-queue/t/.log" || fail "an add is logged with its date and first line"
+for why in answered withdrawn; do grep -qE "Z clear w8:p2 $why" "$tmp/.herdr-queue/t/.log" || fail "a clear is logged as $why"; done
+grep -q "kept w8:p2 machine prompt: \[alert\]" "$tmp/.herdr-queue/t/.log" || fail "a kept machine prompt is logged"
+echo "$ask" | ny stop; ny clear w8:p2
+grep -qE "Z clear w8:p2 dismissed" "$tmp/.herdr-queue/t/.log" || fail "a dismiss is logged as dismissed"
+echo '{"pane":"w7:p9","workspace":"w7","ask":"x","ts":1}' > "$tmp/.herdr-queue/t/w7_p9.json"
+touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"; ny list >/dev/null
+grep -qE "Z clear w7:p9 gone" "$tmp/.herdr-queue/t/.log" || fail "a closed pane's ask is logged as gone"
 echo '{"pane":"w8:p2","mode":"agentic","driver":"w9:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
 echo "$ask" | ny stop
 grep -q "turn-mode ask" "$tmp/prompted" || fail "an agentic session's ask goes to its driver"

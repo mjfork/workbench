@@ -85,3 +85,24 @@ test("a plugin that submits the person's own held words counts as the person: th
   await settle()
   expect(runsOf(seen, 'prompt')).toHaveLength(1)
 })
+
+test('a turn that takes back its own ask (a Resolved heading) is handed over too; a plain turn is not', async ($, on) => {
+  const { seen, start } = engine(on)
+  await $.session.start(start)
+  await $.turn.complete({ ...DONE, answer: 'The peer settled it.\n\n## ✓ Resolved\nAnswered in w7:p3.' } as never)
+  await $.turn.complete({ ...DONE, answer: 'Still waiting.' } as never)
+  await settle()
+  expect(runsOf(seen, 'stop')).toHaveLength(1)
+})
+
+test("a ! command is the person's answer: its turn raises no prompt.submit, so its start hands one over", async ($, on) => {
+  const { seen, start } = engine(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)
+  await $.session.start(start)
+  await $.turn.start({ text: '<bash-stdout>hi</bash-stdout><bash-stderr></bash-stderr>', turnId: 't1' } as never)
+  await $.turn.start({ text: 'a typed prompt', turnId: 't2' } as never)
+  await settle()
+  const runs = runsOf(seen, 'prompt')
+  expect(runs).toHaveLength(1)
+  expect(JSON.parse(runs[0]!.stdin!)).toEqual({ prompt: '! (a shell command)' })
+})
