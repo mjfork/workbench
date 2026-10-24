@@ -13,3 +13,12 @@ test('the mode file: missing or malformed is async; a driver only counts for age
   expect(textFor('agentic:')).toContain('your driver')
   expect([nextMode('async'), nextMode('realtime'), nextMode('agentic')]).toEqual(['realtime', 'async', 'async'])
 })
+
+test('every mode that may end with a Needs-you section carries its whole shape, not just its name', () => {
+  for (const key of ['async', 'peer', 'agentic:w1:p1', 'agentic:']) {
+    for (const field of ['## ⚑ Needs you', '**Ask:**', '**Options:**', '**Reply with:**', '**Unblocks:**', '## ✓ Resolved']) {
+      expect(textFor(key)).toContain(field)
+    }
+  }
+  expect(textFor('agentic:w1:p1')).toContain('queues this pane for your driver')
+})
