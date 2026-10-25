@@ -66,16 +66,16 @@ test('outside a herdr pane nothing is handed over', async ($, on) => {
   expect(runsOf(seen, 'stop').concat(runsOf(seen, 'prompt'))).toEqual([])
 })
 
-test("only the person's own prompts can answer an ask: a plugin's or a peer's are not handed over", async ($, on) => {
+test("every prompt that runs is handed over, so the pane's ask leaves the list while it works; only the person's answers it", async ($, on) => {
   const { seen, start } = engine(on)
   await $.session.start(start)
-  await $.prompt.submit(PLUGIN('[cache-timer handoff] write the note'))
+  await $.prompt.submit(PLUGIN('write the note'))
   await $.prompt.submit(PEER('did you see the build?'))
-  await settle()
-  expect(runsOf(seen, 'prompt')).toEqual([])
   await $.prompt.submit(COMPOSER('yes'))
   await settle()
-  expect(runsOf(seen, 'prompt')).toHaveLength(1)
+  // Anyone else's arrives marked as a machine's ("[" first), which the script reads as working, not as an answer.
+  expect(runsOf(seen, 'prompt').map(r => JSON.parse(r.stdin!).prompt)).toEqual(
+    ['[plugin] write the note', '[peer] did you see the build?', 'yes'])
 })
 
 test("a plugin that submits the person's own held words counts as the person: the cache card's resend answers an ask", async ($, on) => {

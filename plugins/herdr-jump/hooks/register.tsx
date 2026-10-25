@@ -277,13 +277,29 @@ const NEXT_STEPS = /^(#+\s*|\*\*)possible next steps/im
 const BASH_TURN = /^<bash-(input|stdout|stderr)>/
 
 /**
- * True when the script's `stop` could change something after a turn that ended with `answer`. Without a section, a
- * Resolved heading or Possible next steps it routes nothing and writes or clears no item, so most turns skip a dozen short processes. An empty answer still goes: the script
- * then looks for the text in the transcript.
+ * True when the script's `stop` could change something after a turn that ended with `answer`: a section, a Resolved
+ * heading or Possible next steps; or any turn while this pane has an item (shown, or hidden while it works), which a
+ * turn ending without the section drops. Other turns skip a dozen short processes. An empty answer still goes: the
+ * script then looks for the text in the transcript.
  */
-function isStopNeeded(answer: string): boolean {
-  return pane !== null && (answer === '' || NEEDS_YOU_HEADING.test(answer) || RESOLVED_HEADING.test(answer) ||
+function isStopNeeded(answer: string, hasItem: boolean): boolean {
+  return pane !== null && (hasItem || answer === '' || NEEDS_YOU_HEADING.test(answer) || RESOLVED_HEADING.test(answer) ||
     NEXT_STEPS.test(answer))
+}
+
+/** True when this pane has an item in the script's queue, shown or hidden while the pane works. */
+async function hasItem($: EngineInterface): Promise<boolean> {
+  if (pane === null) return false
+  const base = await queueFile($, `${pane.replace(/:/g, '_')}.json`)
+  for (const path of [base, `${base}.working`]) {
+    try {
+      await $.fs.stat(path)
+      return true
+    } catch {
+      // no such file
+    }
+  }
+  return false
 }
 
 /** True while some session's script holds the rebuild lock (a lock over LIST_LOCK_STALE_MS old was left by a killed run). */
@@ -439,20 +455,21 @@ export const register: Register = on => {
     const result = await next(e)
     if (e.agentId === undefined && !e.isAborted) {
       const answer = e.answer
-      if (isStopNeeded(answer)) feedQueue($, 'stop', { last_assistant_message: answer })
+      if (isStopNeeded(answer, await hasItem($))) feedQueue($, 'stop', { last_assistant_message: answer })
     }
     return result
   })
 
-  // Only the person's own prompts can answer an ask (typed, or sent to this pane with `herdr agent prompt`, which
-  // arrives as the same): a plugin's own, a task's, a peer's or a schedule's is not. A prompt another plugin drops
-  // (the cache card's hold, say) is not an answer yet.
+  // Any prompt that runs sets the pane working, so its ask leaves the list until a turn ends asking again. The person's
+  // own (typed, sent with `herdr agent prompt`, or a plugin submitting their held words, asUser) answers it; anyone
+  // else's (a plugin's, a task's, a peer's, a schedule's) is handed over marked as a machine's, which only hides it.
+  // A prompt another plugin drops (the cache card's hold, say) never ran, so it changes nothing.
   on('prompt.submit', async ($, e, next) => {
     wake($)
     const result = await next(e)
-    // A plugin that submits the person's own held words (asUser) is the person too: the cache card's resend.
+    if ((result as { drop?: unknown } | undefined)?.drop !== undefined) return result
     const isPerson = e.origin.kind === 'composer' || e.origin.kind === 'bridge' || (e.origin.kind === 'plugin' && (e.origin as { asUser?: boolean }).asUser === true)
-    if (isPerson && (result as { drop?: unknown } | undefined)?.drop === undefined) feedQueue($, 'prompt', { prompt: e.text })
+    feedQueue($, 'prompt', { prompt: isPerson ? e.text : `[${e.origin.kind}] ${e.text}` })
     return result
   })
 

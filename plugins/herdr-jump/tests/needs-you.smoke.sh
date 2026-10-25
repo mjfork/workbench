@@ -29,11 +29,20 @@ echo "$list" | jq -e '[.[] | select(.pane=="w8:p2" and .kind=="ask" and .label==
 echo "$list" | jq -e '[.[] | select(.pane=="w8:p3" and .kind=="blocked")] | length == 1' >/dev/null || fail "blocked pane listed"
 echo "$list" | jq -e '[.[] | select(.kind=="ask")][0].ask | startswith("**Ask:**")' >/dev/null || fail "ask text is the section body"
 
+# An ask shows only while its pane sits at it: a turn that ends without the section drops it, and any prompt clears it.
 echo "$none" | ny stop
-ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "a turn without the section leaves the ask"
-
+test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "a turn without the section drops the ask"
+echo "$ask" | ny stop
 echo '{"prompt":"[inbox] nudge"}' | STUB_FOCUSED=false ny prompt
-ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "a machine prompt in an unfocused pane leaves the ask"
+test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "a machine prompt sets the pane working and clears the ask"
+ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 0' >/dev/null || fail "a working pane's ask is out of the list"
+jq '.ts = 1000' "$tmp/.herdr-queue/t/w8_p2.json.working" > "$tmp/i" && mv "$tmp/i" "$tmp/.herdr-queue/t/w8_p2.json.working"
+echo "$ask" | ny stop
+ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "a turn that ends asking again puts the ask back"
+jq -e '.ts == 1000' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "the same ask comes back with its first-asked time"
+echo '{"prompt":"[inbox] nudge"}' | ny prompt; echo "$none" | ny stop
+test ! -e "$tmp/.herdr-queue/t/w8_p2.json.working" || fail "a working turn that ends without the ask drops it"
+echo "$ask" | ny stop
 
 echo '{"prompt":"yes, approved"}' | STUB_FOCUSED=false ny prompt
 test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "a plain-text answer clears the ask at once, focused or not"
@@ -43,20 +52,19 @@ echo "$ask" | ny stop
 echo '{"prompt":"yes, approved"}' | STUB_FOCUSED=true ny prompt
 test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "the person's answer in the focused pane clears the ask"
 
-# Automation types into panes too: a machine-shaped line never answers, even in the focused pane. A /command does there.
+# Every prompt clears it, the person's or a machine's, focused or not.
 q="$tmp/.herdr-queue/t/w8_p2.json"
 echo "$ask" | ny stop
 echo '{"prompt":"[alert] id:42 build failed"}' | STUB_FOCUSED=true ny prompt
-test -e "$q" || fail "a machine line in the focused pane leaves the ask"
+test ! -e "$q" || fail "a machine line clears the ask"
+echo "$ask" | ny stop
 echo '{"prompt":"/foo"}' | STUB_FOCUSED=false ny prompt
-test -e "$q" || fail "a /command in an unfocused pane leaves the ask"
-echo '{"prompt":"/foo"}' | STUB_FOCUSED=true ny prompt
-test ! -e "$q" || fail "a /command in the focused pane answers it"
+test ! -e "$q" || fail "a /command clears the ask, focused or not"
 # A ! command is an answer: the mod hands it over as one.
 echo "$ask" | ny stop
 echo '{"prompt":"! (a shell command)"}' | STUB_FOCUSED=false ny prompt
 test ! -e "$q" || fail "a ! command answers the ask"
-# An agent takes back its own ask: a Resolved heading, or needs-you.sh withdraw. A turn with neither leaves it.
+# An agent takes back its own ask: a Resolved heading, or needs-you.sh withdraw.
 echo "$ask" | ny stop
 echo '{"last_assistant_message":"Settled by the peer.\n\n## ✓ Resolved\nThe peer answered it."}' | ny stop
 test ! -e "$q" || fail "a Resolved heading withdraws the ask"
@@ -70,8 +78,7 @@ ny withdraw
 test ! -e "$q" || fail "needs-you.sh withdraw takes back this pane's ask"
 # Every add and clear is logged with a full UTC date and its reason.
 grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z add w8:p2 t: \*\*Ask:\*\* ok\?' "$tmp/.herdr-queue/t/.log" || fail "an add is logged with its date and first line"
-for why in answered withdrawn settled; do grep -qE "Z clear w8:p2 $why" "$tmp/.herdr-queue/t/.log" || fail "a clear is logged as $why"; done
-grep -q "kept w8:p2 machine prompt: \[alert\]" "$tmp/.herdr-queue/t/.log" || fail "a kept machine prompt is logged"
+for why in answered withdrawn settled working; do grep -qE "Z clear w8:p2 $why" "$tmp/.herdr-queue/t/.log" || fail "a clear is logged as $why"; done
 echo "$ask" | ny stop; ny clear w8:p2
 grep -qE "Z clear w8:p2 dismissed" "$tmp/.herdr-queue/t/.log" || fail "a dismiss is logged as dismissed"
 echo '{"pane":"w7:p9","workspace":"w7","ask":"x","ts":1}' > "$tmp/.herdr-queue/t/w7_p9.json"
@@ -185,12 +192,16 @@ echo "$ask" | ny stop; touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"; 
 mkdir "$tmp/.herdr-queue/t/.list-lock"; touch -t 200001010000 "$tmp/.herdr-queue/t/.list-lock" "$tmp/.herdr-queue/t/.list-cache"
 ny list >/dev/null; ny list >/dev/null
 test ! -e "$tmp/.herdr-queue/t/.list-lock" || fail "a stale lock is cleared"
-# The shared list goes stale only when the queue changes: a turn with no ask, or the same ask again, leaves it fresh.
+# The shared list goes stale only when the queue changes: a turn with no ask and none queued, or the same ask again,
+# leaves it fresh.
 cache="$tmp/.herdr-queue/t/.list-cache"
+ny clear w8:p2
 ny list >/dev/null; stamp() { stat -c %Y "$cache" 2>/dev/null || stat -f %m "$cache"; }
 fresh=$(stamp)
 echo "$none" | ny stop
-[ "$(stamp)" = "$fresh" ] || fail "a turn without an ask leaves the shared list fresh"
+[ "$(stamp)" = "$fresh" ] || fail "a turn without an ask, with none queued, leaves the shared list fresh"
+echo "$ask" | ny stop
+ny list >/dev/null; fresh=$(stamp)
 echo "$ask" | ny stop
 [ "$(stamp)" = "$fresh" ] || fail "the same ask again leaves the shared list fresh"
 echo "$other" | ny stop

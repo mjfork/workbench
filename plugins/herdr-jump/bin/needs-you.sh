@@ -3,9 +3,11 @@
 # "## ⚑ Needs you" section. The herdr-jump mod calls `stop` and `prompt` with the JSON a Stop and a
 # UserPromptSubmit hook would get, so no hook settings are needed; `list` and `clear` feed its queue.
 #
-#   needs-you.sh stop     Stop hook: enqueue this pane's section; "## ✓ Resolved" or "Possible next steps"
-#                         without one drops the pane's item; any other turn changes nothing
-#   needs-you.sh prompt   UserPromptSubmit hook: someone answered; clear this pane
+#   needs-you.sh stop     Stop hook: enqueue this pane's section; a turn that ends without one drops the pane's item
+#   needs-you.sh prompt   UserPromptSubmit hook: the pane is working again; clear its item
+#
+# An item shows only while its pane sits at an ask: any prompt (an answer, a peer's message, automation) clears it,
+# and the turn that follows puts it back only if it ends with the section again.
 #   needs-you.sh list     JSON array: queued asks + agents blocked on a dialog
 #   needs-you.sh clear <pane_id> [reason]   the queue's dismiss (reason: dismissed)
 #   needs-you.sh withdraw   an agent takes back its own ask, settled elsewhere (this pane)
@@ -56,12 +58,20 @@ uncache() {
 }
 # Every add and clear is logged, with its reason, so "did that ask reach the queue, and why did it leave?" has an answer.
 log() { printf '%s %s pid=%s ppid=%s pane=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" "$$" "$PPID" "${HERDR_PANE_ID:-}" >> "$dir/.log"; }
-# Removes a pane's ask, logged with why: answered, dismissed, withdrawn or gone.
+# Removes a pane's ask, logged with why: answered, dismissed, withdrawn, settled or gone.
 forget() {
-  [ -e "$(item "$1")" ] || return 0
+  [ -e "$(item "$1")" ] || [ -e "$(item "$1").working" ] || return 0
   log "clear $1 $2"
   # The repeat guard goes with the ask: the same ask asked again later is a new one and reaches the driver again.
-  rm -f "$(item "$1")" "$(item "$1").replied" "$dir/.routed-${1//:/_}"   # .replied: left by builds before 0.14.1
+  rm -f "$(item "$1")" "$(item "$1").working" "$(item "$1").replied" "$dir/.routed-${1//:/_}"   # .replied: left by builds before 0.14.1
+  uncache "$1"
+}
+# Hides a pane's ask while a machine's prompt has it working (out of the list, which reads only *.json). Its times and
+# the driver's repeat guard are kept: if the turn ends with the same ask, it comes back as it was.
+park() {
+  [ -e "$(item "$1")" ] || return 0
+  log "clear $1 working"
+  mv -f "$(item "$1")" "$(item "$1").working"
   uncache "$1"
 }
 item() { printf '%s/%s.json' "$dir" "${1//:/_}"; }
@@ -98,6 +108,7 @@ route_to_driver() {
 # `unrouted`, the driver it could not be handed to. The same ask again keeps its item and its times.
 put_item() {
   local f; f=$(item "$HERDR_PANE_ID")
+  [ -e "$f.working" ] && mv -f "$f.working" "$f"   # back from working: the same ask keeps its times
   jq -e --arg ask "$ask" --argjson routed "$1" --arg d "$2" \
     '.ask == $ask and (if $routed then .driver == $d else (.routed == null and (.unrouted // "") == $d) end)' "$f" >/dev/null 2>&1 && return 0
   local now ts; now=$(date +%s)
@@ -152,16 +163,12 @@ stop)
     if route_to_driver "$driver" "$ask"; then put_item true "$driver"; else put_item false "$driver"; fi
   elif [ -n "$(printf '%s' "$ask" | tr -d '[:space:]')" ]; then
     put_item false ""   # (the same ask again keeps its item, and its time: it has been waiting since it was first asked)
-  elif [ -z "$(printf '%s' "$ask" | tr -d '[:space:]')" ] && printf '%s\n' "$msg" | grep -qiE '^#+[[:space:]]*(✓[[:space:]]*)?resolved'; then
-    # The agent takes back its own ask: a "## ✓ Resolved" heading and no new section.
-    forget "$HERDR_PANE_ID" withdrawn
-  elif [ -z "$(printf '%s' "$ask" | tr -d '[:space:]')" ] && printf '%s\n' "$msg" | grep -qiE '^(#+[[:space:]]*|\*\*)possible next steps'; then
-    # Async turn mode ends a turn that waits on no one with "Possible next steps" instead of the section: nothing is
-    # waiting on the person any more, so the old ask goes. A turn still waiting repeats its section.
+  elif printf '%s\n' "$msg" | grep -qiE '^#+[[:space:]]*(✓[[:space:]]*)?resolved'; then
+    forget "$HERDR_PANE_ID" withdrawn     # the agent takes back its own ask
+  else
+    # The pane is not sitting at an ask: whatever it asked before is not on screen, so it leaves the list.
     forget "$HERDR_PANE_ID" settled
   fi
-  # A turn with none of these (the section, a Resolved heading, Possible next steps) leaves an existing item alone:
-  # agents also end turns woken by background tasks, and those turns say nothing about the ask.
   [ "$({ cksum < "$(item "$HERDR_PANE_ID")"; } 2>/dev/null)" = "$before" ] || drop_cache
   ;;
 prompt)
@@ -171,18 +178,12 @@ prompt)
   # reach its driver again; machine prompts keep the repeat guard (route_to_driver).
   case "$p" in ''|'<'*|'['*|/*|'This session is being continued'*) ;; *) rm -f "$dir/.routed-${HERDR_PANE_ID//:/_}" ;; esac
   [ -e "$(item "$HERDR_PANE_ID")" ] || exit 0
-  # The mod hands over only prompts whose origin is the person (typed, sent with herdr, a `!` command). Automation
-  # reaches a pane by typing too, so text shaped like a machine's never answers, focused or not: "[inbox]" and
-  # "[alert]" lines, <tagged> wrappers, continuations. A /command answers only in the pane the person has focused.
-  # Plain text answers wherever it came from: typed, relayed from another pane, or a client herdr does not count as
-  # focus (a phone, a second window).
+  # Any prompt sets the pane working, so its ask leaves the list now; if the turn ends still asking, Stop puts it
+  # back. The reason in the log says who moved it: the person (plain text, a ! or /command) or a machine.
   case "$p" in
-    ''|'<'*|'['*|'This session is being continued'*) log "kept $HERDR_PANE_ID machine prompt: $(printf '%s' "$p" | head -c 40)"; exit 0 ;;
-    /*)
-      focused=$("$herdr" agent get "$HERDR_PANE_ID" 2>/dev/null | jq -r '.result.agent.focused // false' 2>/dev/null)
-      [ "$focused" = true ] || { log "kept $HERDR_PANE_ID command in an unfocused pane"; exit 0; } ;;
+    ''|'<'*|'['*|'This session is being continued'*) park "$HERDR_PANE_ID" ;;
+    *) forget "$HERDR_PANE_ID" answered ;;
   esac
-  forget "$HERDR_PANE_ID" answered
   ;;
 clear)
   forget "${2:?pane id}" "${3:-dismissed}"
