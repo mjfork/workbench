@@ -3,7 +3,8 @@
 # "## ⚑ Needs you" section. The herdr-jump mod calls `stop` and `prompt` with the JSON a Stop and a
 # UserPromptSubmit hook would get, so no hook settings are needed; `list` and `clear` feed its queue.
 #
-#   needs-you.sh stop     Stop hook: enqueue this pane's section (a turn without one changes nothing)
+#   needs-you.sh stop     Stop hook: enqueue this pane's section; "## ✓ Resolved" or "Possible next steps"
+#                         without one drops the pane's item; any other turn changes nothing
 #   needs-you.sh prompt   UserPromptSubmit hook: someone answered; clear this pane
 #   needs-you.sh list     JSON array: queued asks + agents blocked on a dialog
 #   needs-you.sh clear <pane_id> [reason]   the queue's dismiss (reason: dismissed)
@@ -134,9 +135,13 @@ stop)
   elif [ -z "$(printf '%s' "$ask" | tr -d '[:space:]')" ] && printf '%s\n' "$msg" | grep -qiE '^#+[[:space:]]*(✓[[:space:]]*)?resolved'; then
     # The agent takes back its own ask: a "## ✓ Resolved" heading and no new section.
     forget "$HERDR_PANE_ID" withdrawn
+  elif [ -z "$(printf '%s' "$ask" | tr -d '[:space:]')" ] && printf '%s\n' "$msg" | grep -qiE '^(#+[[:space:]]*|\*\*)possible next steps'; then
+    # Async turn mode ends a turn that waits on no one with "Possible next steps" instead of the section: nothing is
+    # waiting on the person any more, so the old ask goes. A turn still waiting repeats its section.
+    forget "$HERDR_PANE_ID" settled
   fi
-  # A turn without the section (or a Resolved heading) leaves an existing item alone: agents also end turns woken by
-  # background tasks, and those turns say nothing about the ask.
+  # A turn with none of these (the section, a Resolved heading, Possible next steps) leaves an existing item alone:
+  # agents also end turns woken by background tasks, and those turns say nothing about the ask.
   [ "$({ cksum < "$(item "$HERDR_PANE_ID")"; } 2>/dev/null)" = "$before" ] || drop_cache
   ;;
 prompt)

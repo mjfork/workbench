@@ -95,6 +95,14 @@ test('a turn that takes back its own ask (a Resolved heading) is handed over too
   expect(runsOf(seen, 'stop')).toHaveLength(1)
 })
 
+test('a turn that ends with Possible next steps is handed over, so its old ask goes', async ($, on) => {
+  const { seen, start } = engine(on)
+  await $.session.start(start)
+  await $.turn.complete({ ...DONE, answer: 'Shipped.\n\n**Possible next steps**\n1. Tag it.' } as never)
+  await settle()
+  expect(runsOf(seen, 'stop')).toHaveLength(1)
+})
+
 test("a ! command is the person's answer: its turn raises no prompt.submit, so its start hands one over", async ($, on) => {
   const { seen, start } = engine(on)
   on('turn.start', (_$, e) => ({ turnId: e.turnId }) as never)

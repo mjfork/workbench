@@ -270,16 +270,20 @@ const queueFile = async ($: EngineInterface, name: string) =>
 const NEEDS_YOU_HEADING = /^#+\s*⚑\s*needs you/im
 // A turn that takes back its own ask, settled elsewhere: `## ✓ Resolved`, the script's test likewise.
 const RESOLVED_HEADING = /^#+\s*(✓\s*)?resolved/im
+// An async-mode turn that waits on no one: "**Possible next steps**" (or a heading) and no section. The script drops
+// the pane's item, the same test.
+const NEXT_STEPS = /^(#+\s*|\*\*)possible next steps/im
 // A turn a `!` command started: it raises no prompt.submit, and its turn.start text is the command's output.
 const BASH_TURN = /^<bash-(input|stdout|stderr)>/
 
 /**
- * True when the script's `stop` could change something after a turn that ended with `answer`. Without a section or a
- * Resolved heading it routes nothing and writes or clears no item, so most turns skip a dozen short processes. An empty answer still goes: the script
+ * True when the script's `stop` could change something after a turn that ended with `answer`. Without a section, a
+ * Resolved heading or Possible next steps it routes nothing and writes or clears no item, so most turns skip a dozen short processes. An empty answer still goes: the script
  * then looks for the text in the transcript.
  */
 function isStopNeeded(answer: string): boolean {
-  return pane !== null && (answer === '' || NEEDS_YOU_HEADING.test(answer) || RESOLVED_HEADING.test(answer))
+  return pane !== null && (answer === '' || NEEDS_YOU_HEADING.test(answer) || RESOLVED_HEADING.test(answer) ||
+    NEXT_STEPS.test(answer))
 }
 
 /** True while some session's script holds the rebuild lock (a lock over LIST_LOCK_STALE_MS old was left by a killed run). */

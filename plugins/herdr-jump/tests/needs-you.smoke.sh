@@ -61,11 +61,16 @@ echo "$ask" | ny stop
 echo '{"last_assistant_message":"Settled by the peer.\n\n## ✓ Resolved\nThe peer answered it."}' | ny stop
 test ! -e "$q" || fail "a Resolved heading withdraws the ask"
 echo "$ask" | ny stop
+echo '{"last_assistant_message":"Done.\n\n**Possible next steps**\n1. Ship it."}' | ny stop
+test ! -e "$q" || fail "Possible next steps without the section drops the ask"
+echo "$ask" | ny stop
+echo '{"last_assistant_message":"Still open.\n\n**Possible next steps**\n1. x\n\n## ⚑ Needs you\n**Ask:** ok?\n**Reply with:** `yes`"}' | ny stop
+test -e "$q" || fail "an ask repeated with Possible next steps stays"
 ny withdraw
 test ! -e "$q" || fail "needs-you.sh withdraw takes back this pane's ask"
 # Every add and clear is logged with a full UTC date and its reason.
 grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z add w8:p2 t: \*\*Ask:\*\* ok\?' "$tmp/.herdr-queue/t/.log" || fail "an add is logged with its date and first line"
-for why in answered withdrawn; do grep -qE "Z clear w8:p2 $why" "$tmp/.herdr-queue/t/.log" || fail "a clear is logged as $why"; done
+for why in answered withdrawn settled; do grep -qE "Z clear w8:p2 $why" "$tmp/.herdr-queue/t/.log" || fail "a clear is logged as $why"; done
 grep -q "kept w8:p2 machine prompt: \[alert\]" "$tmp/.herdr-queue/t/.log" || fail "a kept machine prompt is logged"
 echo "$ask" | ny stop; ny clear w8:p2
 grep -qE "Z clear w8:p2 dismissed" "$tmp/.herdr-queue/t/.log" || fail "a dismiss is logged as dismissed"
