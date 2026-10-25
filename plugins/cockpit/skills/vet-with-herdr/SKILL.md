@@ -21,13 +21,14 @@ At most 6 at once; 3 when `memory_pressure | tail -1` shows under 25% free or `s
 
 ```bash
 tm=$(ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/*/turn-mode/*/bin/turn-mode.sh | sort -V | tail -1)
+me=<your session name: ListAgents' first line, "This session is <name>">   # how workers SendMessage you
 wt="$(git rev-parse --show-toplevel).r<n>"
 git worktree add --detach "$wt" && git -C "$wt" fetch -q origin && (cd "$wt" && gh pr checkout <n> --branch pr-<n>)
 tab=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$wt" --label r<n> --no-focus)
 pane=$(printf '%s' "$tab" | jq -r '.result.root_pane.pane_id')
 herdr agent start r<n> --kind claude --pane "$pane" -- --model opus --effort medium --autocompact <k> \
   || { sleep 2; herdr agent start r<n> --kind claude --pane "$pane" -- --model opus --effort medium --autocompact <k>; }
-"$tm" r<n> agentic --driver "$HERDR_PANE_ID"
+"$tm" r<n> agentic --driver "$HERDR_PANE_ID" --driver-name "$me"
 ```
 
 - Opus at medium: the review skills need an Opus driver; their seats run at high by themselves. Never start above medium.

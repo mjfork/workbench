@@ -72,7 +72,8 @@ once, **3** when `memory_pressure | tail -1` shows under 25% free or `sysctl -n 
 tab=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --label lane-a --no-focus)
 pane=$(printf '%s' "$tab" | jq -r '.result.root_pane.pane_id')
 herdr agent start lane-a --kind claude --pane "$pane" -- --worktree lane-a
-turn-mode.sh lane-a agentic --driver "$HERDR_PANE_ID"
+me=<your session name: ListAgents' first line, "This session is <name>">
+turn-mode.sh lane-a agentic --driver "$HERDR_PANE_ID" --driver-name "$me"
 herdr agent prompt lane-a "/superpowers:subagent-driven-development docs/plans/x.lane-a.md
 You are lane A of plan docs/plans/x.md, in your own worktree. Only the tasks in the lane file. Do not start other
 sessions or tabs. When done: commit on your branch."
@@ -80,7 +81,8 @@ sessions or tabs. When done: commit on your branch."
 
 `turn-mode.sh … agentic` marks the worker as yours, not the person's: each turn ends on one status line (`DONE`,
 `BLOCKED: <why>` or `NEEDS-INPUT: <why>`), its asks come to this pane instead of the person's queue, and ctx-heavy
-leaves it out of their footer. Hand a tab back (`turn-mode.sh lane-a async`) only if the person
+leaves it out of their footer. `--driver-name` is how the worker addresses you with SendMessage, which takes session
+names, not pane ids. Hand a tab back (`turn-mode.sh lane-a async`) only if the person
 takes it over.
 
 Use the skill the person chose for the job (`/mattpocock-skills:implement <tickets>` works the same way). The prompt

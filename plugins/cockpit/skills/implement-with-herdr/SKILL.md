@@ -55,13 +55,14 @@ worker has to check its base. Stagger starts by a few seconds.
 
 ```bash
 tm=$(ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/*/turn-mode/*/bin/turn-mode.sh | sort -V | tail -1)
+me=<your session name: ListAgents' first line, "This session is <name>">   # how workers SendMessage you
 wt="$(git rev-parse --show-toplevel).w1"
 git worktree add -b lane-a "$wt" <integration-branch>
 tab=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$wt" --label w1 --no-focus)
 pane=$(printf '%s' "$tab" | jq -r '.result.root_pane.pane_id')
 herdr agent start w1 --kind claude --pane "$pane" -- --model sonnet --effort medium --autocompact 250k \
   || { sleep 2; herdr agent start w1 --kind claude --pane "$pane" -- --model sonnet --effort medium --autocompact 250k; }
-"$tm" w1 agentic --driver "$HERDR_PANE_ID"
+"$tm" w1 agentic --driver "$HERDR_PANE_ID" --driver-name "$me"
 ```
 
 Name workers (`w1`, `w2`), not lanes: a worker outlives its first lane. Record each worker's pane, worktree and

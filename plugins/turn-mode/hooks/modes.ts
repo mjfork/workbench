@@ -5,26 +5,30 @@ export const MODE_REL = 'ctx/mode'
 export type Mode = 'async' | 'realtime' | 'agentic'
 
 /** ~/.claude/ctx/mode/<pane>.json, written by the footer toggle (ctx-heavy) and turn-mode.sh. */
-export type ModeFile = { pane: string; mode: Mode; driver: string | null; setBy: string; at: number }
+export type ModeFile = { pane: string; mode: Mode; driver: string | null; driverName?: string | null; setBy: string; at: number }
+
+/** A driver's session name as SendMessage takes it (ListAgents' names); anything else is dropped. */
+const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 
 const MODES: readonly Mode[] = ['async', 'realtime', 'agentic']
 
 /** The file's mode; anything missing or malformed reads as async, the default. */
-export function parseMode(text: string): { mode: Mode; driver: string | null } {
+export function parseMode(text: string): { mode: Mode; driver: string | null; driverName: string | null } {
   try {
     const raw = JSON.parse(text) as Partial<ModeFile>
     const mode = MODES.includes(raw.mode as Mode) ? (raw.mode as Mode) : 'async'
     const driver = mode === 'agentic' && typeof raw.driver === 'string' && raw.driver !== '' ? raw.driver : null
-    return { mode, driver }
+    const driverName = driver !== null && typeof raw.driverName === 'string' && NAME.test(raw.driverName) ? raw.driverName : null
+    return { mode, driver, driverName }
   } catch {
-    return { mode: 'async', driver: null }
+    return { mode: 'async', driver: null, driverName: null }
   }
 }
 
 /** The instructions a turn needs: its session mode, or `peer` for a turn a peer session's message started. */
-export function keyOf(mode: Mode, driver: string | null, isPeerTurn: boolean): string {
+export function keyOf(mode: Mode, driver: string | null, isPeerTurn: boolean, driverName: string | null = null): string {
   if (isPeerTurn) return 'peer'
-  return mode === 'agentic' ? `agentic:${driver ?? ''}` : mode
+  return mode === 'agentic' ? `agentic:${driver ?? ''}${driverName ? `|${driverName}` : ''}` : mode
 }
 
 /** Who the instructions refer to. */
@@ -66,11 +70,17 @@ export function textFor(key: string): string {
       ...section(PERSON),
     ].join('\n')
   }
-  const driver = key.slice('agentic:'.length)
+  const [driver, driverName] = key.slice('agentic:'.length).split('|') as [string, string | undefined]
+  // SendMessage addresses sessions by name, never by herdr pane id: a pane id there is "not reachable".
+  const sendTo = driverName
+    ? `send it to the driver with SendMessage (to: "${driverName}")`
+    : "send it to the driver with SendMessage, addressed by the driver's session name as ListAgents shows it (never a pane id like w1:p1)"
   return [
-    `[turn mode: agentic${driver ? `, driver ${driver}` : ''}] Another agent drives this session. Your final message is one status line, ${STATUS}, then one plain sentence saying what happened, for a person glancing at the pane; nothing else.`,
-    'Put the substance where the driver reads it: send it to the driver with SendMessage.',
-    `A question only the driver can answer: after a NEEDS-INPUT line, add this section, and nothing after it; it goes to ${driver ? `the driver (${driver})` : 'your driver'}, not to ${PERSON}:`,
+    `[turn mode: agentic${driver ? `, driver ${driver}${driverName ? ` (${driverName})` : ''}` : ''}] Another agent drives this session. Your final message has one of two layouts:`,
+    `- DONE or BLOCKED: one status line, then one plain sentence saying what happened, for a person glancing at the pane. Nothing else.`,
+    `- NEEDS-INPUT (a question only the driver can answer): one status line, then one plain sentence, then this section, and nothing after it. It goes to ${driver ? `the driver (${driverName ?? driver})` : 'your driver'}, not to ${PERSON}.`,
+    `Status line: ${STATUS}. Put the substance where the driver reads it: ${sendTo}.`,
+    'The section:',
     ...section('your driver'),
   ].join('\n')
 }

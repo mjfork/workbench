@@ -14,5 +14,5 @@ test('a mode change is told on the next prompt: real-time, then agentic with its
   expect(contexts[1]!.join()).toContain('[turn mode: real-time]')
   expect(contexts[2]).toEqual([])
   expect(contexts[3]!.join()).toContain('[turn mode: agentic, driver w9R:p3]')
-  expect(contexts[3]!.join()).toContain('`DONE`, `BLOCKED: <reason>`, `NEEDS-INPUT: <reason>`, then one plain sentence')
+  expect(contexts[3]!.join()).toContain('one status line, then one plain sentence')
 })

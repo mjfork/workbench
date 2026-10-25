@@ -44,7 +44,7 @@ let poll: { cancel: () => void } | null = null
 /** This pane's mode: its file when one is set, else async. */
 async function modeNow($: EngineInterface) {
   const text = pane === null ? null : await $.fs.read(`${await claudeDir($)}/${MODE_REL}/${pane}.json`).then(String, () => null)
-  return text === null ? { mode: 'async' as const, driver: null } : parseMode(text)
+  return text === null ? { mode: 'async' as const, driver: null, driverName: null } : parseMode(text)
 }
 
 async function refreshShown($: EngineInterface) {
@@ -102,8 +102,8 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     void wake($).catch(() => {})
     if (!isActive || e.text.trimStart().startsWith('/')) return next(e)
-    const { mode, driver } = await modeNow($)
-    const key = keyOf(mode, driver, isPeerOrigin(e.origin.kind))
+    const { mode, driver, driverName } = await modeNow($)
+    const key = keyOf(mode, driver, isPeerOrigin(e.origin.kind), driverName)
     if ((await read($, injected)) === key) return next(e)
 
     const result = await next({ ...e, context: [...(e.context ?? []), textFor(key)] })
