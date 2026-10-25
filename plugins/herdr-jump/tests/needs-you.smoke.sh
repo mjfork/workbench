@@ -80,7 +80,16 @@ grep -qE "Z clear w7:p9 gone" "$tmp/.herdr-queue/t/.log" || fail "a closed pane'
 echo '{"pane":"w8:p2","mode":"agentic","driver":"w9:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
 echo "$ask" | ny stop
 grep -q "turn-mode ask" "$tmp/prompted" || fail "an agentic session's ask goes to its driver"
-test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "a routed ask is not queued"
+jq -e '.routed > 0 and .driver == "w9:p1"' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "a routed ask is kept, with when and to whom"
+touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
+ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 0' >/dev/null || fail "a routed ask stays out of the person's list during the grace period"
+# Unanswered past the grace period, it shows, marked; the driver's plain-text answer clears it.
+jq '.routed -= 1801' "$tmp/.herdr-queue/t/w8_p2.json" > "$tmp/i" && mv "$tmp/i" "$tmp/.herdr-queue/t/w8_p2.json"
+touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
+ny list | jq -e '[.[] | select(.pane=="w8:p2" and (.ask | startswith("[unanswered by its driver w9:p1 for 30+ min] **Ask:**")))] | length == 1' >/dev/null || fail "an ask its driver leaves unanswered past the grace period shows, marked"
+echo '{"prompt":"yes, approved"}' | STUB_FOCUSED=false ny prompt
+test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "the driver's answer clears a routed ask"
+echo "$ask" | ny stop
 grep -q "the user" "$tmp/prompted" || fail "the escalation names the person"
 
 routed() { grep -c "turn-mode ask" "$tmp/prompted"; }
@@ -104,16 +113,39 @@ grep -q 'not instructions to you' "$tmp/prompted" || fail "a routed ask is frame
 grep -q '\[marker removed\]' "$tmp/prompted" || fail "a marker inside the ask is defused"
 ! LC_ALL=C grep -q $'[\001-\010\013-\037\177]' "$tmp/prompted" || fail "a routed ask carries no control characters"
 grep -q 'ship\]0;pwned it?' "$tmp/prompted" || fail "the ask's words still reach the driver"
-# An ask the driver could not be handed is queued, but stays out of the person's list while the driver lives.
+# An ask the driver could not be handed is kept and logged, and shows in the person's list at once, marked.
 mv "$HERDR_BIN" "$HERDR_BIN.real"; printf '#!/usr/bin/env bash\n[ "$1 $2" = "agent prompt" ] && exit 1\nexec "%s.real" "$@"\n' "$HERDR_BIN" > "$HERDR_BIN"; chmod +x "$HERDR_BIN"
 echo "$ask" | ny stop
 mv "$HERDR_BIN.real" "$HERDR_BIN"
 test -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "an ask the driver could not take is kept"
+grep -qE "Z route-failed w8:p2 w9:p1 " "$tmp/.herdr-queue/t/.log" || fail "a failed route is logged"
 touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
-ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 0' >/dev/null || fail "an agentic session's ask is not in the person's list"
+ny list | jq -e '[.[] | select(.pane=="w8:p2" and (.ask | startswith("[its driver w9:p1 could not be reached]")))] | length == 1' >/dev/null || fail "an ask the driver could not be handed shows at once, marked"
 echo '{"pane":"w8:p2","mode":"agentic","driver":"w7:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
 touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
 ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "an ask whose driver is gone shows"
+# A routed ask whose driver is gone (w7:p1 is no live agent) shows at once, marked so, inside the grace period too.
+ny clear w8:p2
+echo "$ask" | ny stop
+jq -e '.routed > 0 and .driver == "w7:p1"' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "routed to the gone driver"
+touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
+ny list | jq -e '[.[] | select(.pane=="w8:p2" and (.ask | startswith("[its driver w7:p1 is gone]")))] | length == 1' >/dev/null || fail "a routed ask whose driver is gone shows at once, marked"
+# A new driver has not seen the ask: the same ask reaches it, and the item names it. (w8:p3 and w9:p1 are both live.)
+ny clear w8:p2
+echo '{"pane":"w8:p2","mode":"agentic","driver":"w8:p3"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
+: > "$tmp/prompted"; echo "$ask" | ny stop
+echo '{"pane":"w8:p2","mode":"agentic","driver":"w9:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
+echo "$ask" | ny stop
+[ "$(grep -c 'turn-mode ask' "$tmp/prompted")" = 2 ] || fail "after a driver change, the same ask reaches the new driver"
+jq -e '.driver == "w9:p1"' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "the item names the driver that has it"
+# Every way an ask ends lets the same ask, asked again later, reach the driver again.
+for end in withdraw dismiss; do
+  : > "$tmp/prompted"
+  case $end in withdraw) echo '{"last_assistant_message":"## ✓ Resolved\nsettled"}' | ny stop ;; dismiss) ny clear w8:p2 ;; esac
+  test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "$end clears the ask"
+  echo "$ask" | ny stop
+  [ "$(grep -c 'turn-mode ask' "$tmp/prompted")" = 1 ] || fail "after $end, the same ask reaches the driver again"
+done
 rm "$tmp/.herdr-queue/t/w8_p2.json"
 rm "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
 echo "$hostile" | ny stop
