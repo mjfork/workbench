@@ -51,6 +51,11 @@ STUB_STATUS=working ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 
 test -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "a working pane's ask file is kept"
 rm -f "$tmp/.herdr-queue/t/.list-cache"
 ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "idle again, the ask is back"
+# hx's card for a trk ask names itself and waits on a person, so it shows on a working pane, under its own label.
+echo '{"pane":"w8:p2","workspace":"w8","label":"tr-abcde","ask":"**Ask:** tr-abcde: Which?","ts":5}' > "$tmp/.herdr-queue/t/hx_tr-abcde.json"
+rm -f "$tmp/.herdr-queue/t/.list-cache"
+STUB_STATUS=working ny list | jq -e '[.[] | select(.label=="tr-abcde" and .kind=="ask")] | length == 1' >/dev/null || fail "an hx card shows on a working pane under its own label"
+rm -f "$tmp/.herdr-queue/t/hx_tr-abcde.json" "$tmp/.herdr-queue/t/.list-cache"
 
 echo '{"prompt":"yes, approved"}' | STUB_FOCUSED=false ny prompt
 test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "a plain-text answer clears the ask at once, focused or not"

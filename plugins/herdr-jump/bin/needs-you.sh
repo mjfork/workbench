@@ -275,14 +275,15 @@ list)
         if $o.owner then "Blocked on a permission prompt or question dialog in this pane. Owner: \($o.owner)."
         else "Waiting on a permission prompt or question dialog in this pane." end;
     # A pane herdr says is working is not sitting at its ask: something set it going without the prompt hook (a background
-    # task, a timed wake). Its ask is left out, not cleared: the turn'"'"'s end puts it back or drops it.
+    # task, a timed wake). Its ask is left out, not cleared: the turn'"'"'s end puts it back or drops it. An item with its
+    # own label is hx'"'"'s card for a trk ask: it waits on a person, not on the pane it is pinned to, so it always shows.
     ($agents | map(select(.agent_status == "working") | .pane_id)) as $busy
-    | ($asks | map(select(.pane as $p | $busy | index($p) | not)) | map(.kind = "ask")) as $a
+    | ($asks | map(select(.label != null or (.pane as $p | $busy | index($p) | not))) | map(.kind = "ask")) as $a
     | ($a | map(.pane)) as $asked
     | ($agents | map(select(.agent_status == "blocked" and (.pane_id as $p | $asked | index($p) | not)))
         | map(owner as $o
           | {pane: .pane_id, workspace: .workspace_id, kind: "blocked", ts: null, ask: blocked_text($o)} + $o)) as $b
-    | ($a + $b) | map(.label = ($spaces[.workspace] // .workspace) | if $seen[.pane] then .seen = $seen[.pane] else . end)
+    | ($a + $b) | map(.label = (.label // $spaces[.workspace] // .workspace) | if $seen[.pane] then .seen = $seen[.pane] else . end)
     | '"$order" > "$cache.$$"
   # An ask cleared while this ran (a dismiss, an answer) stays out: its file is gone.
   kept=$(for f in "$dir"/*.json; do [ -e "$f" ] && jq -r .pane "$f"; done 2>/dev/null | jq -R . | jq -s -c .)
