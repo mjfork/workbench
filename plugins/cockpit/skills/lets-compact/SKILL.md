@@ -1,8 +1,7 @@
 ---
 name: lets-compact
-description: "Write the best compaction for this session given what you'll do next: /lets-compact <what's next>. Returns one ready-to-run /compact line with focus instructions (or /clear when nothing here is needed next) for you to run yourself."
+description: "Write the best compaction for this session given what comes next: one ready-to-run /compact line with focus instructions (or /clear when nothing here is needed next) for the person to run. Use when they ask to compact, clear, slim or reset the context, ask what to keep before moving on, or invoke /lets-compact <what's next>; and offer it yourself when the context is large and the work is about to change task."
 argument-hint: "<what you'll do next>"
-disable-model-invocation: true
 ---
 
 # Let's compact
