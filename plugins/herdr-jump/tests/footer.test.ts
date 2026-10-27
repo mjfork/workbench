@@ -5,7 +5,7 @@ import { expect, test } from 'claude-code/testing'
 import { wrap } from '../hooks/register'
 
 const QUEUE = [
-  { pane: 'w8R:p1', workspace: 'w8R', label: 'Sonic', kind: 'ask', ask: 'x', ts: 1 },
+  { pane: 'w8R:p1', workspace: 'w8R', label: 'Login', kind: 'ask', ask: 'x', ts: 1 },
   { pane: 'w6N:p7', workspace: 'w6N', label: 'fix', kind: 'blocked', ask: 'y', ts: null },
   { pane: 'w45:p1', workspace: 'w45', label: 'scm', kind: 'ask', ask: 'z', ts: 3 },
   { pane: 'w80:p1', workspace: 'w80', label: 'k', kind: 'ask', ask: 'z', ts: 4 },

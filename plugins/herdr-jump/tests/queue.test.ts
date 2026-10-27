@@ -3,7 +3,7 @@ import { KEY } from './engine'
 import { expect, test } from 'claude-code/testing'
 
 const QUEUE = [
-  { pane: 'w8R:p1', workspace: 'w8R', label: 'Sonic meter warning 148', kind: 'ask', ask: '**Ask:** File the bug?\n**Reply with:** `1`', ts: 1000 },
+  { pane: 'w8R:p1', workspace: 'w8R', label: 'Login timeout 148', kind: 'ask', ask: '**Ask:** File the bug?\n**Reply with:** `1`', ts: 1000 },
   { pane: 'w6N:p7', workspace: 'w6N', label: 'fix-verboseness', kind: 'blocked', ask: 'Waiting on a dialog.', ts: null },
 ]
 

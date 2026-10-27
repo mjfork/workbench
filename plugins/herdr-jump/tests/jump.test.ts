@@ -6,9 +6,9 @@ import { KEY } from './engine'
 const LISTS: Record<string, unknown> = {
   workspace: {
     workspaces: [
-      { workspace_id: 'w8N', number: 27, label: 'Classic units and #1042', agent_status: 'blocked' },
-      { workspace_id: 'w8R', number: 22, label: 'Sonic meter warning 148', agent_status: 'working' },
-      { workspace_id: 'w87', number: 17, label: 'Set pressure cleared before frame', agent_status: 'idle' },
+      { workspace_id: 'w8N', number: 27, label: 'Legacy export and #2048', agent_status: 'blocked' },
+      { workspace_id: 'w8R', number: 22, label: 'Login timeout 148', agent_status: 'working' },
+      { workspace_id: 'w87', number: 17, label: 'Cache cleared before render', agent_status: 'idle' },
     ],
   },
   tab: {
@@ -23,15 +23,15 @@ const LISTS: Record<string, unknown> = {
     panes: [
       { pane_id: 'w8N:p1', workspace_id: 'w8N', tab_id: 'w8N:t1', cwd: '/work/api' },
       { pane_id: 'w8N:p2', workspace_id: 'w8N', tab_id: 'w8N:t2', cwd: '/work/build' },
-      { pane_id: 'w8R:p1', workspace_id: 'w8R', tab_id: 'w8R:t1', cwd: '/work/sonic' },
-      { pane_id: 'w87:p1', workspace_id: 'w87', tab_id: 'w87:t1', cwd: '/work/pressure' },
+      { pane_id: 'w8R:p1', workspace_id: 'w8R', tab_id: 'w8R:t1', cwd: '/work/login' },
+      { pane_id: 'w87:p1', workspace_id: 'w87', tab_id: 'w87:t1', cwd: '/work/render' },
     ],
   },
   agent: {
     agents: [
-      { pane_id: 'w8N:p2', terminal_title_stripped: 'Fix the meter bug', agent_status: 'blocked' },
-      { pane_id: 'w8R:p1', terminal_title_stripped: 'Sonic warning', agent_status: 'working' },
-      { pane_id: 'w87:p1', terminal_title_stripped: 'Pressure test', agent_status: 'idle' },
+      { pane_id: 'w8N:p2', terminal_title_stripped: 'Fix the export bug', agent_status: 'blocked' },
+      { pane_id: 'w8R:p1', terminal_title_stripped: 'Timeout warning', agent_status: 'working' },
+      { pane_id: 'w87:p1', terminal_title_stripped: 'Render test', agent_status: 'idle' },
     ],
   },
 }
@@ -90,7 +90,7 @@ for (const query of ['w8n:p2', '/W8N:P2']) {
     const seen = engine(on)
     await $.command.run(jump(query))
     expect(seen.focused).toEqual([['agent', 'w8N:p2']])
-    expect(seen.toasts.join()).toContain('Classic units and #1042 › build')
+    expect(seen.toasts.join()).toContain('Legacy export and #2048 › build')
   })
 }
 
@@ -107,11 +107,11 @@ test('an agent pane herdr will not focus falls back to its tab, then its workspa
 })
 
 for (const [words, noun, target] of [
-  ['sonic', 'agent', 'w8R:p1'],
+  ['login', 'agent', 'w8R:p1'],
   ['build', 'agent', 'w8N:p2'],
   ['api', 'tab', 'w8N:t1'],
-  ['classic bug', 'agent', 'w8N:p2'],
-  ['pressure', 'agent', 'w87:p1'],
+  ['legacy bug', 'agent', 'w8N:p2'],
+  ['render', 'agent', 'w87:p1'],
 ] as const) {
   test(`/jump ${words}: the one pane it matches is where you land (${noun} ${target})`, async ($, on) => {
     const seen = engine(on)
@@ -130,7 +130,7 @@ test('/jump with no match focuses nothing and says so', async ($, on) => {
 
 test('/jump with words that match several panes opens the picker, already filtered', async ($, on) => {
   const seen = engine(on)
-  await $.command.run(jump('classic'))
+  await $.command.run(jump('legacy'))
   expect(seen.focused).toEqual([])
   expect(seen.opened).toEqual(['herdr-jump'])
   const pane = await $.ui.mount({ plugin: 'herdr-jump', surface: 'terminal', component: 'Pane', requestId: 'herdr-jump', props: PANE_PROPS })
@@ -147,12 +147,12 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const pane = await $.ui.mount({ plugin: 'herdr-jump', surface, component: 'Pane', requestId: 'herdr-jump', props: PANE_PROPS })
     for (const id of ['w87:p1', 'w8R:p1', 'w8N:p1', 'w8N:p2']) expect(await pane.find({ key: `go-${id}` })).toBeDefined()
-    expect(await pane.find({ text: /Classic units and #1042 › build/ })).toBeDefined()
-    expect(await pane.find({ text: /Fix the meter bug/ })).toBeDefined()
+    expect(await pane.find({ text: /Legacy export and #2048 › build/ })).toBeDefined()
+    expect(await pane.find({ text: /Fix the export bug/ })).toBeDefined()
 
-    await pane.input({ key: 'q', text: 'son', kind: 'change' })
+    await pane.input({ key: 'q', text: 'log', kind: 'change' })
     expect(await pane.find({ key: 'go-w8N:p1' })).toBeUndefined()
-    await pane.input({ key: 'q', text: 'son' })
+    await pane.input({ key: 'q', text: 'log' })
     expect(seen.focused).toEqual([['agent', 'w8R:p1']])
   })
 
