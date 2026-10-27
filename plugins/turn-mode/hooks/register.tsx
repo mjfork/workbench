@@ -22,6 +22,9 @@ const claudeDir = async ($: EngineInterface) => {
 // prompt is never touched, so a toggle never spends the prompt cache.
 const injected = atom({ plugin: 'turn-mode', key: 'injected' } as const, null)
 const shown = atom({ plugin: 'turn-mode', key: 'shown' } as const, 'async')
+// How long the conversation was at the last prompt. Shorter now means a compaction (or a rewind) dropped what was
+// said, even when the session.compact hook below never ran: another mod can answer that event or skip past it.
+const seen = atom({ plugin: 'turn-mode', key: 'seen' } as const, 0)
 const LABEL = { async: 'async', realtime: 'real-time', agentic: 'agentic' } as const
 
 let pane: string | null = null
@@ -102,6 +105,11 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     void wake($).catch(() => {})
     if (!isActive || e.text.trimStart().startsWith('/')) return next(e)
+    const length = await $.session.messages().then(m => m.length, () => null)
+    if (length !== null) {
+      if (length < (await read($, seen))) await update($, injected, () => null)
+      await update($, seen, () => length)
+    }
     const { mode, driver, driverName } = await modeNow($)
     const key = keyOf(mode, driver, isPeerOrigin(e.origin.kind), driverName)
     if ((await read($, injected)) === key) return next(e)
@@ -133,7 +141,8 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // A compacted conversation keeps only its summary: say it again on the next prompt.
+  // A compacted conversation keeps only its summary: say it again on the next prompt. The length check above catches
+  // a compaction this hook missed.
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId === undefined && e.trigger !== 'precompute' && result.skip === undefined) await update($, injected, () => null)

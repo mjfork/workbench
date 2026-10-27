@@ -9,6 +9,8 @@ declare module 'claude-code' {
     'turn-mode': {
       /** The instructions last put in the conversation (a mode key); null: none since start, /clear or compaction. */
       injected: Injected
+      /** How many messages the conversation held at the last prompt; fewer at the next means a compaction or rewind. */
+      seen: number
       /** This pane's mode, for the footer toggle (re-read every few seconds: a driver's turn-mode.sh shows soon). */
       shown: ShownMode
     }

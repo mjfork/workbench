@@ -17,6 +17,9 @@ export const TRANSCRIPT = {
 export function engine(on: On, opts: { cwd?: string } = {}) {
   const files: Record<string, string> = {}
   const contexts: string[][] = []
+  // The conversation as the next request reads it: each prompt adds a question and an answer, a compaction leaves a summary.
+  const conversation: { role: string; text: string; toolUses: never[] }[] = []
+  on('session.messages', () => ({ value: [...conversation] }) as never)
   const reads = { mode: 0 }
   const clock = mock.clock(on)
   on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1', HERDR_PANE_ID: 'w9B:p1', HERDR_WORKSPACE_ID: 'w9B' } as Record<string, string>)[e.name] }))
@@ -33,6 +36,7 @@ export function engine(on: On, opts: { cwd?: string } = {}) {
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('prompt.submit', (_$, e) => {
     contexts.push([...(e.context ?? [])])
+    conversation.push({ role: 'user', text: e.text, toolUses: [] }, { role: 'assistant', text: 'ok', toolUses: [] })
     return { text: e.text, context: e.context }
   })
   // What wakes the mod: a keystroke (the edit applied as typed), a turn, a tool, a slash command.
@@ -45,11 +49,16 @@ export function engine(on: On, opts: { cwd?: string } = {}) {
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('tool.call', () => ({ result: 'ok' }) as never)
   on('command.run', () => ({ text: '' }))
-  on('session.compact', () => ({ messages: [{ role: 'user', text: 'summary', toolUses: [] }], tokensBefore: 9, tokensAfter: 1 }) as never)
+  // A compaction the mod's own hook never sees (another mod answered the event or skipped past it).
+  const compactBehind = () => conversation.splice(0, conversation.length, { role: 'user', text: 'summary', toolUses: [] })
+  on('session.compact', () => {
+    compactBehind()
+    return { messages: [{ role: 'user', text: 'summary', toolUses: [] }], tokensBefore: 9, tokensAfter: 1 } as never
+  })
   const setMode = (mode: string, driver: string | null = null) => {
     files[MODE_FILE] = JSON.stringify({ pane: 'w9B:p1', mode, driver, setBy: 'test', at: 0 })
   }
-  return { files, contexts, reads, edits, setMode, clock, start: { cwd: '/home/ubuntu/projects/acme-app', surface: 'terminal', isInteractive: true } as never }
+  return { files, contexts, reads, edits, setMode, clock, compactBehind, start: { cwd: '/home/ubuntu/projects/acme-app', surface: 'terminal', isInteractive: true } as never }
 }
 
 export const say = (text: string, kind = 'composer') => ({ text, origin: { kind }, wait: false }) as never
