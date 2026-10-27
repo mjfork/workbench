@@ -274,7 +274,10 @@ list)
       def blocked_text($o):
         if $o.owner then "Blocked on a permission prompt or question dialog in this pane. Owner: \($o.owner)."
         else "Waiting on a permission prompt or question dialog in this pane." end;
-    ($asks | map(.kind = "ask")) as $a
+    # A pane herdr says is working is not sitting at its ask: something set it going without the prompt hook (a background
+    # task, a timed wake). Its ask is left out, not cleared: the turn'"'"'s end puts it back or drops it.
+    ($agents | map(select(.agent_status == "working") | .pane_id)) as $busy
+    | ($asks | map(select(.pane as $p | $busy | index($p) | not)) | map(.kind = "ask")) as $a
     | ($a | map(.pane)) as $asked
     | ($agents | map(select(.agent_status == "blocked" and (.pane_id as $p | $asked | index($p) | not)))
         | map(owner as $o

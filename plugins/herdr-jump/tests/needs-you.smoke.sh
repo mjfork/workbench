@@ -11,7 +11,7 @@ cat > "$HERDR_BIN" <<'STUB'
 echo "$1 $2" >> "$HOME/herdr-calls"
 [ "$1 $2" = "agent list" ] && sleep "${STUB_SLEEP:-0}"
 case "$1 $2" in
-  "agent list") echo '{"result":{"agents":[{"pane_id":"w8:p2","workspace_id":"w8","tab_id":"w8:t1","agent_status":"idle"},{"pane_id":"w8:p3","workspace_id":"w8","tab_id":"w8:t2","agent_status":"blocked"},{"pane_id":"w9:p1","workspace_id":"w9","tab_id":"w9:t1","agent_status":"idle"}]}}' ;;
+  "agent list") echo '{"result":{"agents":[{"pane_id":"w8:p2","workspace_id":"w8","tab_id":"w8:t1","agent_status":"W8P2_STATUS"},{"pane_id":"w8:p3","workspace_id":"w8","tab_id":"w8:t2","agent_status":"blocked"},{"pane_id":"w9:p1","workspace_id":"w9","tab_id":"w9:t1","agent_status":"idle"}]}}' | sed "s/W8P2_STATUS/${STUB_STATUS:-idle}/" ;;
   "workspace list") echo '{"result":{"workspaces":[{"workspace_id":"w8","label":"Alpha"},{"workspace_id":"w9","label":"Beta"}]}}' ;;
   "agent get") echo "{\"result\":{\"agent\":{\"focused\":${STUB_FOCUSED:-true}}}}" ;;
   "agent prompt") echo "$4" >> "$HOME/prompted" ;;
@@ -43,6 +43,14 @@ jq -e '.ts == 1000' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "the sam
 echo '{"prompt":"[inbox] nudge"}' | ny prompt; echo "$none" | ny stop
 test ! -e "$tmp/.herdr-queue/t/w8_p2.json.working" || fail "a working turn that ends without the ask drops it"
 echo "$ask" | ny stop
+
+# A pane set going without a prompt (a background task, a timed wake) isn't sitting at its ask: out of the list while
+# herdr says it is working, its file kept for the turn's end to decide.
+rm -f "$tmp/.herdr-queue/t/.list-cache"
+STUB_STATUS=working ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 0' >/dev/null || fail "a working pane's ask is out of the list"
+test -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "a working pane's ask file is kept"
+rm -f "$tmp/.herdr-queue/t/.list-cache"
+ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "idle again, the ask is back"
 
 echo '{"prompt":"yes, approved"}' | STUB_FOCUSED=false ny prompt
 test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "a plain-text answer clears the ask at once, focused or not"
