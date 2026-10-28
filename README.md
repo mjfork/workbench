@@ -107,6 +107,7 @@ Change them in `/config`, or in `settings.json` under `pluginConfigs["<plugin>"]
 
 | Plugin | Setting | Default | Meaning |
 |---|---|---|---|
+| `cockpit` | `stack` | `auto` | The build stack `/cockpit:implement-with-herdr` workers use when the prompt (`using <stack>`) and the tickets' format don't pick one: `mattpocock`, `superpowers`, `addyosmani`, `gsd`, `compound_engineering`, `spec_kit` or `bmad`. `auto` takes the first installed of mattpocock and superpowers, else Claude Code's own steps |
 | `cache-timer` | `handoffLeadMinutes` | 0 (off) | Minutes before expiry that the [handoff](docs/handoff.md) runs; 10 is a good start |
 | | `handoffMinTokens` | 200000 | Smaller sessions get no handoff: rebuilding them costs little (0 = any) |
 | `ctx-heavy` | `show` | `both` | After each pane: `context` (its size), `cache` (time left) or `both` |

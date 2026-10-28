@@ -1,6 +1,6 @@
 ---
 name: implement-with-herdr
-description: "Drive a spec's tickets to merged, tested code from inside Herdr at the lowest cost, then the least wall-clock time: independent lanes run in parallel Herdr tabs, each ticket on the cheapest model and effort that can do it, workers cleared between tickets and auto-compacting early. Invoke directly (/cockpit:implement-with-herdr <spec> [tickets]) when a spec with tickets (beads, /to-tickets issues, or a superpowers plan) is ready to build. Needs HERDR_ENV=1."
+description: "Drive a spec's tickets to merged, tested code from inside Herdr at the lowest cost, then the least wall-clock time: independent lanes run in parallel Herdr tabs, each ticket on the cheapest model and effort that can do it, workers cleared between tickets and auto-compacting early. Invoke directly (/cockpit:implement-with-herdr <spec> [tickets]) when a spec with tickets (beads, /to-tickets issues, a superpowers plan, or another stack's tasks) is ready to build; add `using <stack>` to pick the build skill. Needs HERDR_ENV=1."
 ---
 
 # Implement with Herdr: tickets to merged, cheapest first
@@ -9,15 +9,48 @@ Order of goals: fewest dollars, then fewest minutes. **Done** = every ticket mer
 green, one final review's findings fixed, tickets closed. Drive to done; stop early only for a decision only the
 person can make.
 
-Workers run the person's implementation skill: `/mattpocock-skills:implement` per ticket, or
-`/superpowers:subagent-driven-development` per lane when the input is a superpowers plan. You choose where each
-ticket runs, on which model and effort, and when context is cleared.
+Workers run the person's build skill, picked in §0. You choose where each ticket runs, on which model and effort,
+and when context is cleared.
 
 ## No process porn
 
 Every step must move a ticket toward merged. Write nothing but `.cockpit/implement.md` (the ticket table) and code.
 No plan documents, design notes, status reports, approval gates, per-ticket reviews or chat summaries. A worker's
 report is one status line. Rulings go in a ticket comment or a one-line file, not a document.
+
+## 0. Pick the build skill
+
+Take the first rule that gives one:
+
+1. **Named in the prompt:** `using superpowers`, `using /gsd-execute-phase`. Not installed: say so and ask; don't
+   fall back to another.
+2. **The input's format:**
+
+   | Input | Stack | Build skill |
+   |---|---|---|
+   | /to-tickets issues, beads | mattpocock | `/mattpocock-skills:implement <ticket>` |
+   | a writing-plans plan | superpowers | `/superpowers:subagent-driven-development <lane file>` (`executing-plans` for one small lane) |
+   | `SPEC.md` + /plan tasks | addyosmani | `/agent-skills:build` (the next task; not `build auto`) |
+   | `.planning/` phase `PLAN.md` | gsd | `/gsd-execute-phase <phase>` |
+   | a ce-plan plan | compound_engineering | `/compound-engineering:ce-work <plan>` |
+   | `.specify/`, `specs/*/tasks.md` | spec_kit | `/speckit-implement` |
+   | BMad epics and stories, `_bmad/` | bmad | `/bmad-build <story>` |
+
+3. **The `stack` option:** `jq -r '.pluginConfigs.cockpit.options.stack // empty'` over the project's
+   `.claude/settings.local.json` and `.claude/settings.json`, then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`;
+   the first set value wins. Not installed: say so and ask, as in 1. `auto` or unset: go to 4.
+4. **Nothing picked:** the first installed of mattpocock, then superpowers. Neither: Claude Code's own steps, with
+   no skill (§5).
+
+Installed means a line `❯ <plugin>@` in `claude plugin list`, or the skill's file on disk; gsd, spec_kit and bmad
+install per project, so look in the repo's `.claude/` too. Use the form that's on disk: gsd is `/gsd-<cmd>`
+(`/gsd-core:gsd-<cmd>` as a plugin, `/gsd:<cmd>` on the old get-shit-done-cc), spec-kit is `/speckit-<x>` from
+`.claude/skills` (`/speckit.<x>` from older `.claude/commands`), bmad is `/bmad-build` (`/bmad-method:bmad-build` as
+a plugin). gstack has no build skill: for its plans use Claude Code's own steps.
+
+Then read the picked skill's SKILL.md, as orchestrate §0 says, every run; the file wins over this table. It settles
+the unit a worker gets (a ticket, a phase, a whole tasks file), whether the skill fans out by itself (then give it one
+lane), and its closing review, which workers skip.
 
 ## 1. Read the tickets, once
 
@@ -80,11 +113,14 @@ and keeps the worker out of the person's queue.
 This is the main cost lever: a ticket starts from a near-empty context instead of carrying every earlier ticket.
 
 ```bash
-herdr agent prompt w1 "/mattpocock-skills:implement <ticket-id>
-Part of <spec path>; you are on branch lane-a in your own worktree. Skip the closing /code-review: one runs on the
+herdr agent prompt w1 "<build skill> <ticket-id>
+Part of <spec path>; you are on branch lane-a in your own worktree. Skip the skill's closing review: one runs on the
 whole branch at the end. Commit as '<ticket-id>: <title>'. Before DONE, run 'git merge <integration-branch>' and
 resolve any conflicts. Do not open tabs or sessions."
 ```
+
+With no build skill, the first line is `Build ticket <ticket-id>: write failing tests for its acceptance criteria,
+make them pass, run the full test suite.` and the rest is the same.
 
 Before each prompt, note the pane's `usd` from `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/ctx/<pane>.json`. The ticket's cost is
 the reading at `DONE` minus that one, or the whole reading if it went down (a `/clear` started a new session).
@@ -130,6 +166,6 @@ worker that is idle between tasks and above 100k.
 
 ## When not to
 
-- Not in Herdr (`HERDR_ENV` unset): run the implementation skill as written.
+- Not in Herdr (`HERDR_ENV` unset): run the build skill (§0) as written.
 - One chain of three tickets or fewer: start one worker anyway (§4-5) if the tickets differ in tier; otherwise run
-  the implementation skill here.
+  the build skill here.

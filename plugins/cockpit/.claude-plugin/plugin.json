@@ -1,6 +1,6 @@
 {
   "name": "cockpit",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "description": "Everything for running long sessions in one install: turn-mode, ctx-bar, ctx-heavy, herdr-jump and cache-timer, plus /cockpit:orchestrate, process management for implementation skills: independent lanes run in parallel Herdr tabs (one worktree each) driven from your window, at the fewest tokens and least wall-clock time; and /cockpit:implement-with-herdr, which drives a spec's tickets to merged code at the lowest cost: each ticket on the cheapest model and effort that can do it, workers cleared between tickets and auto-compacting early; and /lets-compact <what's next>, which writes the best /compact (or /clear) for what you do next, proposed for you to run. /cockpit:vet-with-herdr takes PRs through /vet:map, /vet:address and /vet:verify in parallel Herdr tabs (needs the vet plugin). Four of the plugins need herdr; cache-timer does not.",
   "author": {
     "name": "Michael Fork"
@@ -8,6 +8,24 @@
   "license": "MIT",
   "homepage": "https://github.com/mjfork/workbench",
   "repository": "https://github.com/mjfork/workbench",
+  "userConfig": {
+    "stack": {
+      "type": "string",
+      "title": "Build stack for /cockpit:implement-with-herdr",
+      "description": "The skill stack workers build tickets with, when neither the prompt (using <stack>) nor the tickets' format picks one. auto: the first installed of mattpocock and superpowers, else Claude Code's own steps (tests first, implement, commit).",
+      "options": [
+        "auto",
+        "mattpocock",
+        "superpowers",
+        "addyosmani",
+        "gsd",
+        "compound_engineering",
+        "spec_kit",
+        "bmad"
+      ],
+      "default": "auto"
+    }
+  },
   "dependencies": [
     "turn-mode",
     "ctx-bar",
