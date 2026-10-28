@@ -36,9 +36,8 @@ Take the first rule that gives one:
    | `.specify/`, `specs/*/tasks.md` | spec_kit | `/speckit-implement` |
    | BMad epics and stories, `_bmad/` | bmad | `/bmad-build <story>` |
 
-3. **The `stack` option:** `jq -r '.pluginConfigs.cockpit.options.stack // empty'` over the project's
-   `.claude/settings.local.json` and `.claude/settings.json`, then `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`;
-   the first set value wins. Not installed: say so and ask, as in 1. `auto` or unset: go to 4.
+3. **The `stack` option:** it is set to `${user_config.stack}`. Not installed: say so and ask, as in 1. `auto`,
+   empty, or still the literal `${user_config...}` text (not substituted): go to 4.
 4. **Nothing picked:** the first installed of mattpocock, then superpowers. Neither: Claude Code's own steps, with
    no skill (§5).
 
