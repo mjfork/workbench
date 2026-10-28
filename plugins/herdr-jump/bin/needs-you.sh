@@ -15,8 +15,9 @@
 #
 # A session in agentic turn mode ($CLAUDE_CONFIG_DIR/ctx/mode/<pane>.json, the turn-mode mod)
 # sends its section to its driver pane instead, as a "[turn-mode ask]" prompt. A routed ask stays out of the person's
-# list for NEEDS_YOU_DRIVER_GRACE seconds (default 1800) while the driver is a live agent; after that, unanswered, it
-# shows, marked as unanswered by the driver. One the driver could not be handed, or whose driver is gone, shows at once.
+# list for NEEDS_YOU_DRIVER_GRACE seconds (default 1800) while the driver is a live agent, and after that while the
+# driver is working or asking the person itself; once the driver sits idle with no ask of its own, it shows, marked as
+# unanswered by the driver. One the driver could not be handed, or whose driver is gone, shows at once.
 #
 # Items live in ~/.herdr-queue/<herdr session>/<pane_id with : as _>.json. Hooks are no-ops
 # outside a herdr pane.
@@ -237,21 +238,26 @@ list)
     if [ -n "$live" ] && ! jq -e --arg p "$p" 'index($p) != null' <<<"$live" >/dev/null; then rm -f "$f"; continue; fi
     seen=$(jq -c --arg p "$p" --argjson t "$(cat "$f")" '. + {($p): $t}' <<<"$seen" 2>/dev/null || echo "$seen")
   done
-  # An agentic session's ask, handed to its driver, is the driver's for the grace period while that driver lives: left
-  # out. After it, or when the driver could not be handed it, the person sees it too, marked.
+  # An agentic session's ask, handed to its driver, is the driver's while that driver lives and is on it: left out
+  # for the grace period, and after it for as long as the driver is working or is itself waiting on the person (its
+  # own ask is in the list, and that is the one the person answers: showing the worker's too counted one question
+  # twice). It shows, marked, once the driver sits idle past the grace period with no ask of its own, or is gone, or
+  # could not be handed it.
   now=$(date +%s)
   # (Judged by the driver it was handed to, the one that has it.)
   for p in $(jq -r '.[] | select(.routed != null) | .pane' <<<"$asks"); do
     d=$(jq -r --arg p "$p" '.[] | select(.pane == $p) | .driver // empty' <<<"$asks")
     [ -n "$d" ] && [ "$d" != "$p" ] && jq -e --arg d "$d" 'index($d) != null' <<<"$live" >/dev/null 2>&1 &&
-      jq -e --arg p "$p" --argjson now "$now" --argjson g "$grace" '.[] | select(.pane == $p) | $now - .routed < $g' <<<"$asks" >/dev/null &&
+      { jq -e --arg p "$p" --argjson now "$now" --argjson g "$grace" '.[] | select(.pane == $p) | $now - .routed < $g' <<<"$asks" >/dev/null ||
+        jq -e --arg d "$d" 'any(.[]; .pane_id == $d and .agent_status == "working")' <<<"$agents" >/dev/null ||
+        jq -e --arg d "$d" 'any(.[]; .pane == $d)' <<<"$asks" >/dev/null; } &&
       asks=$(jq -c --arg p "$p" 'map(select(.pane != $p))' <<<"$asks")
   done
   asks=$(jq -c --argjson live "${live:-null}" --argjson g "$grace" 'map(
       if .routed != null then
         if $live == null then .ask = "[handed to its driver \(.driver); no answer seen] \(.ask)"
         elif (.driver as $d | $live | index($d)) == null then .ask = "[its driver \(.driver) is gone] \(.ask)"
-        else .ask = "[unanswered by its driver \(.driver) for \($g / 60 | floor)+ min] \(.ask)" end
+        else .ask = "[unanswered by its driver \(.driver), idle for \($g / 60 | floor)+ min] \(.ask)" end
       elif .unrouted != null then .ask = "[its driver \(.unrouted) could not be reached] \(.ask)"
       else . end)' <<<"$asks")
   # A blocked pane an agent drives (turn-mode agentic) is the driver's: its driver, when that is a live agent.

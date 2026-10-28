@@ -11,7 +11,7 @@ cat > "$HERDR_BIN" <<'STUB'
 echo "$1 $2" >> "$HOME/herdr-calls"
 [ "$1 $2" = "agent list" ] && sleep "${STUB_SLEEP:-0}"
 case "$1 $2" in
-  "agent list") echo '{"result":{"agents":[{"pane_id":"w8:p2","workspace_id":"w8","tab_id":"w8:t1","agent_status":"W8P2_STATUS"},{"pane_id":"w8:p3","workspace_id":"w8","tab_id":"w8:t2","agent_status":"blocked"},{"pane_id":"w9:p1","workspace_id":"w9","tab_id":"w9:t1","agent_status":"idle"}]}}' | sed "s/W8P2_STATUS/${STUB_STATUS:-idle}/" ;;
+  "agent list") echo '{"result":{"agents":[{"pane_id":"w8:p2","workspace_id":"w8","tab_id":"w8:t1","agent_status":"W8P2_STATUS"},{"pane_id":"w8:p3","workspace_id":"w8","tab_id":"w8:t2","agent_status":"blocked"},{"pane_id":"w9:p1","workspace_id":"w9","tab_id":"w9:t1","agent_status":"W9P1_STATUS"}]}}' | sed -e "s/W8P2_STATUS/${STUB_STATUS:-idle}/" -e "s/W9P1_STATUS/${STUB_DRIVER_STATUS:-idle}/" ;;
   "workspace list") echo '{"result":{"workspaces":[{"workspace_id":"w8","label":"Alpha"},{"workspace_id":"w9","label":"Beta"}]}}' ;;
   "agent get") echo "{\"result\":{\"agent\":{\"focused\":${STUB_FOCUSED:-true}}}}" ;;
   "agent prompt") echo "$4" >> "$HOME/prompted" ;;
@@ -103,10 +103,18 @@ grep -q "turn-mode ask" "$tmp/prompted" || fail "an agentic session's ask goes t
 jq -e '.routed > 0 and .driver == "w9:p1"' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "a routed ask is kept, with when and to whom"
 touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
 ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 0' >/dev/null || fail "a routed ask stays out of the person's list during the grace period"
-# Unanswered past the grace period, it shows, marked; the driver's plain-text answer clears it.
+# Past the grace period it stays the driver's while the driver works, or waits on the person itself: its own ask is
+# the one the person answers, so the worker's would count the same question twice.
 jq '.routed -= 1801' "$tmp/.herdr-queue/t/w8_p2.json" > "$tmp/i" && mv "$tmp/i" "$tmp/.herdr-queue/t/w8_p2.json"
 touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
-ny list | jq -e '[.[] | select(.pane=="w8:p2" and (.ask | startswith("[unanswered by its driver w9:p1 for 30+ min] **Ask:**")))] | length == 1' >/dev/null || fail "an ask its driver leaves unanswered past the grace period shows, marked"
+STUB_DRIVER_STATUS=working ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 0' >/dev/null || fail "a routed ask stays out while its driver works"
+echo '{"pane":"w9:p1","workspace":"w9","ask":"**Ask:** may w8 ship?","ts":7}' > "$tmp/.herdr-queue/t/w9_p1.json"
+touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
+ny list | jq -e '([.[] | select(.pane=="w8:p2")] | length == 0) and ([.[] | select(.pane=="w9:p1")] | length == 1)' >/dev/null || fail "a routed ask stays out while its driver asks the person itself"
+rm -f "$tmp/.herdr-queue/t/w9_p1.json"
+# With its driver idle and asking nothing past the grace period, it shows, marked; the driver's plain-text answer clears it.
+touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
+ny list | jq -e '[.[] | select(.pane=="w8:p2" and (.ask | startswith("[unanswered by its driver w9:p1, idle for 30+ min] **Ask:**")))] | length == 1' >/dev/null || fail "an ask its idle driver leaves unanswered past the grace period shows, marked"
 echo '{"prompt":"yes, approved"}' | STUB_FOCUSED=false ny prompt
 test ! -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "the driver's answer clears a routed ask"
 echo "$ask" | ny stop
