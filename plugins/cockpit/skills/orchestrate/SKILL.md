@@ -80,8 +80,8 @@ sessions or tabs. When done: commit on your branch."
 ```
 
 `turn-mode.sh … agentic` marks the worker as yours, not the person's: each turn ends on one status line (`DONE`,
-`BLOCKED: <why>` or `NEEDS-INPUT: <why>`), its asks come to this pane instead of the person's queue, and ctx-heavy
-leaves it out of their footer. `--driver-name` is how the worker addresses you with SendMessage, which takes session
+`BLOCKED: <why>`, `NEEDS-INPUT: <why>`, or `WAITING: <job>` while a long job it started runs), its asks come to this
+pane instead of the person's queue, and ctx-heavy leaves it out of their footer. `--driver-name` is how the worker addresses you with SendMessage, which takes session
 names, not pane ids. Hand a tab back (`turn-mode.sh lane-a async`) only if the person
 takes it over.
 
@@ -93,7 +93,8 @@ carries the slash command, the lane file path, and those three rules; nothing pa
 - **Never read a worker's transcript.** Read its lane ledger, its status line
   (`herdr agent read lane-a --source recent-unwrapped --lines 30`), and `git log --oneline` / `git diff --stat` of its
   branch. Pull detail only to settle a specific problem.
-- **Wait in bounded stretches:** `herdr agent wait lane-a --timeout 600000`, one status line between stretches.
+- **Wait in bounded stretches:** `worker-wait.sh --timeout 600000 lane-a` (cockpit's `bin/`, on PATH), one status
+  line between stretches. It waits through `WAITING` turns, which a bare `herdr agent wait` would wake you on.
   Lanes that finish arrive on their own; do not poll in short loops.
 - **Hand over files, not text:** lane files, rulings and fixes go into files the worker reads.
 - **Compact yourself** (`/compact`) after each lane merges, once `.cockpit/orchestrate.md` is current.

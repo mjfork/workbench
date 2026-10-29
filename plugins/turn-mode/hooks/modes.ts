@@ -49,6 +49,8 @@ const section = (to: string) => [
 ]
 
 const STATUS = 'exactly one of `DONE`, `BLOCKED: <reason>`, `NEEDS-INPUT: <reason>`'
+// Only a driven worker may end a turn mid-task: its driver's waiter keeps waiting through a WAITING turn.
+const AGENTIC_STATUS = 'exactly one of `DONE`, `BLOCKED: <reason>`, `NEEDS-INPUT: <reason>`, `WAITING: <the job and how you will know it ended>`'
 
 /** What the model is told for a mode key; it holds until the next change. */
 export function textFor(key: string): string {
@@ -77,9 +79,10 @@ export function textFor(key: string): string {
     : "send it to the driver with SendMessage, addressed by the driver's session name as ListAgents shows it (never a pane id like w1:p1)"
   return [
     `[turn mode: agentic${driver ? `, driver ${driver}${driverName ? ` (${driverName})` : ''}` : ''}] Another agent drives this session. Your final message has one of two layouts:`,
-    `- DONE or BLOCKED: one status line, then one plain sentence saying what happened, for a person glancing at the pane. Nothing else.`,
+    `- DONE, BLOCKED or WAITING: one status line, then one plain sentence saying what happened, for a person glancing at the pane. Nothing else.`,
+    `- WAITING means the task isn't finished: a long job you started (a CI run, a test rig) is still going and a background task or monitor will wake you when it ends. Once it ends, stop every monitor and background wait you started for it, then carry on with the task.`,
     `- NEEDS-INPUT (a question only the driver can answer): one status line, then one plain sentence, then this section, and nothing after it. It goes to ${driver ? `the driver (${driverName ?? driver})` : 'your driver'}, not to ${PERSON}.`,
-    `Status line: ${STATUS}. Put the substance where the driver reads it: ${sendTo}.`,
+    `Status line: ${AGENTIC_STATUS}. Put the substance where the driver reads it: ${sendTo}.`,
     'The section:',
     ...section('your driver'),
   ].join('\n')

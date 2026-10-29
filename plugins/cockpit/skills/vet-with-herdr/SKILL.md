@@ -51,7 +51,7 @@ Worktree line: `You are already on PR <n>'s head as branch pr-<n> in your own wo
 
 ## 4. Run the loop thin
 
-- **Wait on every worker at once:** one background `herdr agent wait r<n> --timeout 1800000` each (`run_in_background`). Read only the last status line: `herdr agent read r<n> --source recent-unwrapped --lines 5`. Timeout → ctx file's `at` still advancing means working, wait again; stalled → read the pane. Never read a transcript.
+- **Wait on every worker at once:** one background `worker-wait.sh r<n>` each (`run_in_background`; cockpit's `bin/`, on PATH). It prints the status line and waits through `WAITING` turns (a worker watching CI). Exit 124 is a timeout → ctx file's `at` still advancing means working, wait again; stalled → read the pane. Never read a transcript.
 - **map `DONE`** → `/clear`, address.
 - **address `DONE`** → `/clear`, verify. Escalations left open → `NEEDS-INPUT`: see below.
 - **verify PASS** → done; record `HUMAN` (RED or one-way door → needs your approval).

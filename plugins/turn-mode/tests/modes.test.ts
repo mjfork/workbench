@@ -43,7 +43,7 @@ test('the driver is named for SendMessage by its session name, never a pane id',
 
 test('agentic: two separate layouts, so "nothing else" never forbids the Needs-you section', () => {
   const lines = textFor('agentic:w1:p1|lead-driver').split('\n')
-  const done = lines.find(l => l.startsWith('- DONE or BLOCKED:')) ?? ''
+  const done = lines.find(l => l.startsWith('- DONE, BLOCKED or WAITING:')) ?? ''
   const needs = lines.find(l => l.startsWith('- NEEDS-INPUT')) ?? ''
   expect(done).toContain('one status line, then one plain sentence')
   expect(done).toContain('Nothing else.')
@@ -54,4 +54,13 @@ test('agentic: two separate layouts, so "nothing else" never forbids the Needs-y
   expect(lines.filter(l => /nothing else/i.test(l))).toEqual([done])
   // The section's shape follows the layouts.
   expect(lines.indexOf('## ⚑ Needs you')).toBeGreaterThan(lines.indexOf(needs))
+})
+
+test('agentic: WAITING is a turn end that is not the end of the task, and only a driven worker gets it', () => {
+  const agentic = textFor('agentic:w1:p1|lead-driver')
+  expect(agentic).toContain('`WAITING: <the job and how you will know it ended>`')
+  expect(agentic).toContain("WAITING means the task isn't finished")
+  expect(agentic).toContain('stop every monitor and background wait you started for it')
+  expect(textFor('peer')).not.toContain('WAITING')
+  expect(textFor('async')).not.toContain('WAITING')
 })

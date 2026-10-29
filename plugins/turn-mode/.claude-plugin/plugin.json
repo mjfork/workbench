@@ -1,6 +1,6 @@
 {
   "name": "turn-mode",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "How a turn ends, per session: async (summary, then a Needs-you ask or possible next steps), real-time (just ends) or agentic (one status line for the driving agent); injected with the prompt when it changes; a footer toggle left of the heaviest sessions",
   "author": {
     "name": "Michael Fork"
