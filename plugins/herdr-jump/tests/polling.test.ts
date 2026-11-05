@@ -2,6 +2,7 @@ import type { On } from 'claude-code'
 import { KEY } from './engine'
 import { expect, test } from 'claude-code/testing'
 import { mock } from 'claude-code/testing'
+import { posix } from './posix'
 
 // Every pane's footer polls herdr for the same two facts: which pane is focused, and who is waiting. These hold the
 // polling to one session for focus, and to the script's shared list for the queue.
@@ -29,17 +30,17 @@ function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('fs.read', (_$, e) => {
-    const f = files[e.path]
-    if (f === undefined) throw new Error(`ENOENT: ${e.path}`)
+    const f = files[posix(e.path)]
+    if (f === undefined) throw new Error(`ENOENT: ${posix(e.path)}`)
     return { value: f.text } as never
   })
   on('fs.stat', (_$, e) => {
-    const f = files[e.path]
-    if (f === undefined) throw new Error(`ENOENT: ${e.path}`)
+    const f = files[posix(e.path)]
+    if (f === undefined) throw new Error(`ENOENT: ${posix(e.path)}`)
     return { value: { kind: 'file', size: f.text.length, mtimeMs: f.mtimeMs ?? 0, isLink: false } } as never
   })
   on('fs.write', (_$, e) => {
-    files[e.path] = { text: e.text }
+    files[posix(e.path)] = { text: e.text }
     return { value: undefined } as never
   })
   on('command.register', () => ({ value: undefined }) as never)

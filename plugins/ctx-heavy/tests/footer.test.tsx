@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { RenderPropsOf } from 'claude-code'
 import { cacheLeft, cardOf, heat, isDriven, isWarm, rowOf, settingsOf, span, topSessions } from '../hooks/register'
+import { posix } from './posix'
 
 const ROWS = [
   { pane: 'w6A:p1', workspace: 'w6A', tokens: 703_931 },
@@ -59,9 +60,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     on('clock.now', () => ({ value: NOW }))
     // The reports sit in ctx itself; its mode and cache folders are empty here.
     on('fs.list', (_$, e) => ({
-      value: !e.path.endsWith('/ctx') ? [] : Object.entries(files).map(([name, f]) => ({ name, kind: 'file' as const, size: f.text.length, mtimeMs: f.mtimeMs, isLink: false })),
+      value: !posix(e.path).endsWith('/ctx') ? [] : Object.entries(files).map(([name, f]) => ({ name, kind: 'file' as const, size: f.text.length, mtimeMs: f.mtimeMs, isLink: false })),
     }))
-    on('fs.read', (_$, e) => ({ value: files[e.path.split('/').at(-1) ?? '']?.text ?? '' }))
+    on('fs.read', (_$, e) => ({ value: files[posix(e.path).split('/').at(-1) ?? '']?.text ?? '' }))
     on('clock.every', () => ({ deny: 'no timers' }) as never)
     on('fs.write', () => ({ value: undefined }) as never)
     on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
@@ -170,12 +171,12 @@ for (const show of ['context', 'cache'] as const) {
     on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1' } as Record<string, string>)[e.name] }))
     on('clock.now', () => ({ value: NOW }))
     on('fs.list', (_$, e) => ({
-      value: Object.keys(files).filter(p => p.startsWith(`${e.path}/`) && !p.slice(e.path.length + 1).includes('/'))
-        .map(p => ({ name: p.slice(e.path.length + 1), kind: 'file' as const, size: files[p]!.length, mtimeMs: NOW - 1000, isLink: false })),
+      value: Object.keys(files).filter(p => p.startsWith(`${posix(e.path)}/`) && !p.slice(posix(e.path).length + 1).includes('/'))
+        .map(p => ({ name: p.slice(posix(e.path).length + 1), kind: 'file' as const, size: files[p]!.length, mtimeMs: NOW - 1000, isLink: false })),
     }))
     on('fs.read', (_$, e) => {
-      if (files[e.path] === undefined) throw new Error('ENOENT')
-      return { value: files[e.path]! }
+      if (files[posix(e.path)] === undefined) throw new Error('ENOENT')
+      return { value: files[posix(e.path)]! }
     })
     on('clock.every', () => ({ deny: 'no timers' }) as never)
     on('fs.write', () => ({ value: undefined }) as never)
@@ -221,12 +222,12 @@ for (const expired of ['hide', 'show'] as const) {
     on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1' } as Record<string, string>)[e.name] }))
     on('clock.now', () => ({ value: NOW }))
     on('fs.list', (_$, e) => ({
-      value: Object.keys(files).filter(p => p.startsWith(`${e.path}/`) && !p.slice(e.path.length + 1).includes('/'))
-        .map(p => ({ name: p.slice(e.path.length + 1), kind: 'file' as const, size: files[p]!.length, mtimeMs: NOW - 1000, isLink: false })),
+      value: Object.keys(files).filter(p => p.startsWith(`${posix(e.path)}/`) && !p.slice(posix(e.path).length + 1).includes('/'))
+        .map(p => ({ name: p.slice(posix(e.path).length + 1), kind: 'file' as const, size: files[p]!.length, mtimeMs: NOW - 1000, isLink: false })),
     }))
     on('fs.read', (_$, e) => {
-      if (files[e.path] === undefined) throw new Error('ENOENT')
-      return { value: files[e.path]! }
+      if (files[posix(e.path)] === undefined) throw new Error('ENOENT')
+      return { value: files[posix(e.path)]! }
     })
     on('clock.every', () => ({ deny: 'no timers' }) as never)
     on('fs.write', () => ({ value: undefined }) as never)

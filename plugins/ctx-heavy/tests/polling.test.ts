@@ -1,6 +1,7 @@
 import type { On, RenderPropsOf } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 import { expect, mock, test } from 'claude-code/testing'
+import { posix } from './posix'
 
 // Every herdr session draws the same heaviest-sessions line. These hold the reading of the per-pane reports to one
 // session, which writes a summary the others read, and hold the drawn state still while nothing shown changes.
@@ -36,21 +37,21 @@ function engine(on: On, files: Record<string, File>) {
   on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('fs.list', (_$, e) => {
     // A poll lists three folders (reports, modes, caches): counted once, by the reports'.
-    if (e.path === CTX) lists.push(e.path)
-    const dir = `${e.path}/`
+    if (posix(e.path) === CTX) lists.push(posix(e.path))
+    const dir = `${posix(e.path)}/`
     const entries = Object.entries(files)
       .filter(([path]) => path.startsWith(dir) && !path.slice(dir.length).includes('/'))
       .map(([path, f]) => ({ name: path.slice(dir.length), kind: 'file' as const, size: f.text.length, mtimeMs: f.mtimeMs, isLink: false }))
     return { value: [...entries, { name: 'heavy', kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false }] } as never
   })
   on('fs.read', (_$, e) => {
-    reads.push(e.path)
-    const f = files[e.path]
-    if (f === undefined) throw new Error(`ENOENT: ${e.path}`)
+    reads.push(posix(e.path))
+    const f = files[posix(e.path)]
+    if (f === undefined) throw new Error(`ENOENT: ${posix(e.path)}`)
     return { value: f.text } as never
   })
   on('fs.write', (_$, e) => {
-    files[e.path] = { text: e.text, mtimeMs: NOW }
+    files[posix(e.path)] = { text: e.text, mtimeMs: NOW }
     return { value: undefined } as never
   })
   on('state.set', { plugin: 'ctx-heavy' }, ($, e, next) => {

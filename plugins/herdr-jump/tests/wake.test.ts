@@ -1,5 +1,6 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import { posix } from './posix'
 
 // ~55 sessions on one machine: an idle one that polls on a timer wakes its whole process every few seconds, so the
 // system can never leave it swapped out. A session starts asleep and polls nothing; the person's input, its own work,
@@ -25,19 +26,19 @@ function engine(on: On) {
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('fs.read', (_$, e) => {
-    reads.push(e.path)
-    const f = files[e.path]
-    if (f === undefined) throw new Error(`ENOENT: ${e.path}`)
+    reads.push(posix(e.path))
+    const f = files[posix(e.path)]
+    if (f === undefined) throw new Error(`ENOENT: ${posix(e.path)}`)
     return { value: f.text } as never
   })
   on('fs.stat', (_$, e) => {
-    reads.push(e.path)
-    const f = files[e.path]
-    if (f === undefined) throw new Error(`ENOENT: ${e.path}`)
+    reads.push(posix(e.path))
+    const f = files[posix(e.path)]
+    if (f === undefined) throw new Error(`ENOENT: ${posix(e.path)}`)
     return { value: { kind: 'file', size: f.text.length, mtimeMs: f.mtimeMs ?? 0, isLink: false } } as never
   })
   on('fs.write', (_$, e) => {
-    files[e.path] = { text: e.text }
+    files[posix(e.path)] = { text: e.text }
     return { value: undefined } as never
   })
   on('command.register', () => ({ value: undefined }) as never)

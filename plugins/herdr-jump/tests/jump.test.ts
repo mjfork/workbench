@@ -2,6 +2,7 @@
 import type { CommandRunInput, On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import { KEY } from './engine'
+import { posix } from './posix'
 
 const LISTS: Record<string, unknown> = {
   workspace: {
@@ -40,9 +41,9 @@ type Seen = { focused: string[][]; toasts: string[]; opened: string[]; files: Re
 
 function engine(on: On, failOn: string[] = []): Seen {
   const seen: Seen = { focused: [], toasts: [], opened: [], files: {}, at: { pane: 'w8N:p1' }, clock: mock.clock(on) }
-  on('fs.read', (_$, e) => (seen.files[e.path] !== undefined ? { value: seen.files[e.path]! } : ({ deny: 'ENOENT' } as never)))
+  on('fs.read', (_$, e) => (seen.files[posix(e.path)] !== undefined ? { value: seen.files[posix(e.path)]! } : ({ deny: 'ENOENT' } as never)))
   on('fs.write', (_$, e) => {
-    seen.files[e.path] = e.text
+    seen.files[posix(e.path)] = e.text
     return { value: undefined } as never
   })
   on('command.register', () => ({ value: undefined }) as never)

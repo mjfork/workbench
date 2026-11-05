@@ -1,6 +1,7 @@
 import type { On } from 'claude-code'
 import { COMPOSER, KEY } from './engine'
 import { expect, mock, test } from 'claude-code/testing'
+import { posix } from './posix'
 
 // What an idle session costs: ~60 sessions load this mod, so a plain turn should start no process, and a queue that has
 // not changed should draw no footer again.
@@ -27,13 +28,13 @@ function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('fs.read', (_$, e) => {
-    const f = files[e.path]
-    if (f === undefined) throw new Error(`ENOENT: ${e.path}`)
+    const f = files[posix(e.path)]
+    if (f === undefined) throw new Error(`ENOENT: ${posix(e.path)}`)
     return { value: f.text } as never
   })
   on('fs.stat', (_$, e) => {
-    const f = files[e.path]
-    if (f === undefined) throw new Error(`ENOENT: ${e.path}`)
+    const f = files[posix(e.path)]
+    if (f === undefined) throw new Error(`ENOENT: ${posix(e.path)}`)
     return { value: { kind: 'file', size: f.text.length, mtimeMs: f.mtimeMs ?? 0, isLink: false } } as never
   })
   on('fs.write', () => ({ value: undefined }) as never)

@@ -16,7 +16,7 @@ grep -q 'ctx 44% (424k/967k)' <<<"$l1" || fail "context on line 1, against the t
 grep -q '\[app\]' <<<"$l1" || fail "project on line 1"
 grep -q 'Opus' <<<"$l1" || fail "model on line 1"
 grep -q '/…/app' <<<"$l1" || fail "a deep directory shows its first and last parts"
-grep -q 'session 12% (resets .* UTC)' <<<"$l2" || fail "session usage in the chosen time zone"
+grep -Eq 'session 12% \(resets .* (UTC|GMT)\)' <<<"$l2" || fail "session usage in the chosen time zone"
 grep -q 'week 56%' <<<"$l2" || fail "week usage"
 grep -q '^session .* · week .* · \$3.46$' <<<"$l2" || fail "line 2 is session, week, then cost"
 [ "$l3" = 'dev@example.com · Example Org' ] || fail "line 3 is the login alone, read from CLAUDE_CONFIG_DIR"

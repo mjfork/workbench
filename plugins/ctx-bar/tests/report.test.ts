@@ -1,5 +1,6 @@
 import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
+import { posix } from './posix'
 
 const ENV: Record<string, string> = { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1', HERDR_PANE_ID: 'w9B:p1', HERDR_WORKSPACE_ID: 'w9B' }
 
@@ -7,7 +8,7 @@ function engine(on: On, env: Record<string, string>) {
   const writes: { path: string; report: Record<string, unknown> }[] = []
   on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('fs.write', (_$, e) => {
-    writes.push({ path: e.path, report: JSON.parse(e.text) })
+    writes.push({ path: posix(e.path), report: JSON.parse(e.text) })
     return { value: undefined } as never
   })
   on('clock.now', () => ({ value: 1_000 }))
