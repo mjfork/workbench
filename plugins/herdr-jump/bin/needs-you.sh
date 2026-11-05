@@ -22,6 +22,9 @@
 # Items live in ~/.herdr-queue/<herdr session>/<pane_id with : as _>.json. Hooks are no-ops
 # outside a herdr pane.
 set -u
+# The native Windows jq writes CRLF; -b (--binary) stops that. An older jq without the flag is used as it is. A function, not a
+# pipe, so stdin and exit codes (jq -e) pass straight through.
+if jq -b -n . >/dev/null 2>&1; then jq() { command jq -b "$@"; }; fi
 claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 # How long a driver has to answer a routed ask before the person sees it too.
 grace="${NEEDS_YOU_DRIVER_GRACE:-1800}"
@@ -78,7 +81,7 @@ park() {
 item() { printf '%s/%s.json' "$dir" "${1//:/_}"; }
 # The driver pane of an agentic session (turn-mode), else nothing.
 driver_of() {
-  local f="$claude_dir/ctx/mode/$1.json"
+  local f="$claude_dir/ctx/mode/${1//:/_}.json"
   [ -f "$f" ] && jq -r 'select(.mode == "agentic") | .driver // empty' "$f" 2>/dev/null
 }
 # Text an agent wrote, made safe to pass on: no escape sequences or other controls (line breaks and tabs kept), no

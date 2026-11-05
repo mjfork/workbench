@@ -4,12 +4,12 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Fill, Kind, PaneReport, Snapshot, TurnRecord } from '../types'
 import { cells, fmt, KINDS, measurer } from './measure'
 
-/** The Claude config folder, as Claude Code itself reads it from CLAUDE_CONFIG_DIR. Unset, it is ~/.claude, where Claude Code keeps it. */
+/** The Claude config folder: CLAUDE_CONFIG_DIR, else ~/.claude under HOME or, where herdr on Windows starts Claude with only USERPROFILE set, under USERPROFILE. */
 const claudeDir = async ($: EngineInterface) => {
   const dir = await $.env.get('CLAUDE_CONFIG_DIR')
   if (dir) return dir
-  const home = await $.env.get('HOME')
-  if (!home) throw new Error('neither CLAUDE_CONFIG_DIR nor HOME is set')
+  const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
+  if (!home) throw new Error('none of CLAUDE_CONFIG_DIR, HOME or USERPROFILE is set')
   return `${home}/.claude`
 }
 
@@ -118,7 +118,7 @@ export async function writeReport($: EngineInterface, where: HerdrPane, isEnded 
     usd: usage.cost?.usd ?? 0,
     turns: await read($, turns),
   }
-  await $.fs.write(`${await claudeDir($)}/ctx/${where.pane}.json`, JSON.stringify(report))
+  await $.fs.write(`${await claudeDir($)}/ctx/${where.pane.replace(/:/g, '_')}.json`, JSON.stringify(report))
 }
 
 export const register: Register = on => {

@@ -19,7 +19,7 @@ const resume = async ($: any, { seen, clock }: Engine, prompt = 'fix the bug') =
 // 10 minutes: on the 1-hour tier the handoff is written at minute 50.
 // The gate's default is 200K, so these sessions are big ones.
 const BIG = { tokens: 250_000 }
-const STATE = '/home/ubuntu/.claude/ctx/cache/w9B:p1.json'
+const STATE = '/home/ubuntu/.claude/ctx/cache/w9B_p1.json'
 const REPLY = '## Goal\nShip the thing.\n\n## Next step\nRun the tests.'
 const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve()

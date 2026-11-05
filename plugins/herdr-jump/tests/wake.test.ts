@@ -12,13 +12,15 @@ const START = { cwd: '/tmp', surface: 'terminal', isInteractive: true } as never
 const EDIT = { origin: { kind: 'composer' }, text: 'ab', cursor: 2, start: 2, end: 2, inputText: 'c' } as never
 const MINUTE = 60_000
 
-function engine(on: On) {
+function engine(on: On, envOverride?: Record<string, string>) {
   const runs: string[][] = []
   const reads: string[] = []
   const edits: unknown[] = []
   const clock = mock.clock(on, { now: 100_000 })
   const files: Record<string, { text: string; mtimeMs?: number }> = {}
   const env: Record<string, string> = { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HOME: '/home/ubuntu', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
+  if (envOverride !== undefined) for (const k of Object.keys(env)) delete env[k]
+  Object.assign(env, envOverride)
   on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('process.run', (_$, e) => {
     runs.push([...e.argv])
@@ -164,4 +166,33 @@ test('an edit goes through untouched: the same edit beneath, the same box back',
   await $.prompt.edit(EDIT)
   expect(e.edits).toEqual([EDIT, EDIT])
   expect(box).toEqual({ text: 'abc', cursor: 3 })
+})
+
+const WIN = { OS: 'Windows_NT', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
+
+test('on Windows with only USERPROFILE set, the lease and the queue cache are read under the profile folder and nothing throws', async ($, on) => {
+  const e = engine(on, { ...WIN, USERPROFILE: 'C:/Users/me' })
+  await $.session.start(START)
+  await $.prompt.edit(EDIT)
+  await e.clock.settle()
+  expect(e.reads).toContain('/Users/me/.claude/ctx/focus/default.poller.json')
+  expect(e.reads).toContain('/Users/me/.herdr-queue/default/.list-cache')
+  expect(e.reads.some(p => p.startsWith('undefined'))).toBe(false)
+})
+
+test('CLAUDE_CONFIG_DIR wins over HOME and USERPROFILE for the lease; HOME wins over USERPROFILE', async ($, on) => {
+  const e = engine(on, { ...WIN, CLAUDE_CONFIG_DIR: '/cfg', HOME: '/home/h', USERPROFILE: 'C:/Users/me' })
+  await $.session.start(START)
+  await $.prompt.edit(EDIT)
+  await e.clock.settle()
+  expect(e.reads).toContain('/cfg/ctx/focus/default.poller.json')
+  expect(e.reads).toContain('/home/h/.herdr-queue/default/.list-cache')
+})
+
+test('HOME wins over USERPROFILE', async ($, on) => {
+  const e = engine(on, { ...WIN, HOME: '/home/h', USERPROFILE: 'C:/Users/me' })
+  await $.session.start(START)
+  await $.prompt.edit(EDIT)
+  await e.clock.settle()
+  expect(e.reads).toContain('/home/h/.claude/ctx/focus/default.poller.json')
 })

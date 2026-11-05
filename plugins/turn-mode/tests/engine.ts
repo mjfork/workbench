@@ -2,7 +2,7 @@ import type { On } from 'claude-code'
 import { mock } from 'claude-code/testing'
 import { posix } from './posix'
 
-export const MODE_FILE = '/home/ubuntu/.claude/ctx/mode/w9B:p1.json'
+export const MODE_FILE = '/home/ubuntu/.claude/ctx/mode/w9B_p1.json'
 
 // The test session has no transcript to compact; this plugin, above the one under
 // test, supplies one as a live session would.
@@ -15,7 +15,7 @@ export const TRANSCRIPT = {
 }
 
 /** Stands in for the engine; `files` is the disk, `contexts` what each prompt carried, `reads` how often the mode file was read. */
-export function engine(on: On, opts: { cwd?: string } = {}) {
+export function engine(on: On, opts: { cwd?: string; env?: Record<string, string> } = {}) {
   const files: Record<string, string> = {}
   const contexts: string[][] = []
   // The conversation as the next request reads it: each prompt adds a question and an answer, a compaction leaves a summary.
@@ -23,7 +23,8 @@ export function engine(on: On, opts: { cwd?: string } = {}) {
   on('session.messages', () => ({ value: [...conversation] }) as never)
   const reads = { mode: 0 }
   const clock = mock.clock(on)
-  on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1', HERDR_PANE_ID: 'w9B:p1', HERDR_WORKSPACE_ID: 'w9B' } as Record<string, string>)[e.name] }))
+  const env = opts.env ?? { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1', HERDR_PANE_ID: 'w9B:p1', HERDR_WORKSPACE_ID: 'w9B' }
+  on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('fs.read', (_$, e) => {
     if (posix(e.path) === MODE_FILE) reads.mode++
     return files[posix(e.path)] !== undefined ? { value: files[posix(e.path)]! } : ({ deny: 'ENOENT' } as never)
