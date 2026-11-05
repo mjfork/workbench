@@ -1,7 +1,7 @@
 'use strict'
 // Repo hygiene: shell, markdown and CommonJS files must be LF in the index, whatever a
 // contributor's core.autocrlf says. Keep PINNED in step with .gitattributes.
-// Run with: node --test tests/
+// Run with: node --test "tests/*.test.cjs"
 const test = require('node:test')
 const assert = require('node:assert')
 const fs = require('node:fs')

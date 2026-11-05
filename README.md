@@ -170,6 +170,7 @@ claude plugin test plugins/<plugin>
 claude plugin validate plugins/<plugin>
 bash plugins/herdr-jump/tests/needs-you.smoke.sh
 bash statusline/test.sh
+node --test "tests/*.test.cjs"
 ```
 
 </details>
