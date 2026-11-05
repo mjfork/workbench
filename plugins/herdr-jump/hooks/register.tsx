@@ -47,8 +47,14 @@ const LIST_LOCK_STALE_MS = 30_000
 const IDLE_MS = 10 * 60_000
 /** The script that keeps the needs-you queue (`list`, `clear <pane>`, and the `stop` and `prompt` hook actions), shipped in this plugin's bin/. */
 const needsYou = ($: EngineInterface) => `${$.plugin.root}/bin/needs-you.sh`
-/** Prints a line each time herdr focuses this pane, its tab or its workspace: a blocked socket read, no timer. */
-const focusWatch = ($: EngineInterface) => `${$.plugin.root}/bin/focus-watch.sh`
+/**
+ * The command that prints a line each time herdr focuses this pane or its tab: a blocked socket read, no timer. On
+ * Windows herdr's API is a named pipe, which `nc -U` cannot reach, so a Node watcher reads it; elsewhere the shell one.
+ */
+const focusWatch = async ($: EngineInterface): Promise<string[]> =>
+  (await $.env.get('OS')) === 'Windows_NT'
+    ? ['node', `${$.plugin.root}/bin/focus-watch.cjs`]
+    : ['bash', `${$.plugin.root}/bin/focus-watch.sh`]
 const query = atom({ plugin: 'herdr-jump', key: 'query' } as const, '')
 const panes = atom({ plugin: 'herdr-jump', key: 'panes' } as const, [])
 const queue = atom({ plugin: 'herdr-jump', key: 'queue' } as const, [])
@@ -101,7 +107,7 @@ function watchFocus($: EngineInterface): void {
   isWatchingFocus = true
   void (async () => {
     try {
-      for await (const { stream, text } of $.process.spawn({ argv: ['bash', focusWatch($)] })) {
+      for await (const { stream, text } of $.process.spawn({ argv: await focusWatch($) })) {
         if (stream === 'stdout' && text.includes('focused')) onFocused($)
       }
     } catch {
