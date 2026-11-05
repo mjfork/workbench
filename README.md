@@ -144,7 +144,7 @@ Using a profile in `CLAUDE_CONFIG_DIR`? Copy the script into that folder instead
 - [herdr](https://herdr.dev) on `PATH`, with sessions started inside it, for everything but `cache-timer` and `vet`.
 - `bash` and `jq` for the needs-you queue; no hook settings to add. The queue lives in `~/.herdr-queue/`, readable by you only.
 - `nc` with `-U` (macOS's own; `netcat-openbsd` on Linux), so a footer redraws the moment you focus its pane. Without it, it redraws on your first keystroke there.
-- `vet`: `gh`, `git`, Node 22+.
+- `vet`: `git`, Node 22+, and `gh` for GitHub repos or a signed-in `az` with the `azure-devops` extension for Azure DevOps repos.
 
 A footer plugin installs the ones it builds on (`turn-mode` → `ctx-bar` → `ctx-heavy` → `herdr-jump`), which also lines the footer up.
 

@@ -13,9 +13,9 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/map-format.md` (ids, allowed answers, rep
 
 ## 1. Load the map
 
-`gh pr checkout <n>`; `git fetch origin <base>`. Working dir: `R="$(git rev-parse --absolute-git-dir)/vet/<n>"; mkdir -p "$R"`.
+`F="${CLAUDE_PLUGIN_ROOT}/scripts/forge.cjs"`: the only way vet talks to the code host; never call a host CLI yourself. `node "$F" pr-checkout <n>`; `git fetch origin <base>`. Working dir: `R="$(git rev-parse --absolute-git-dir)/vet/<n>"; mkdir -p "$R"`.
 
-Newest comment by a trusted poster (`map-format.md` → "Trusted posters") whose first line is `<!-- vet-map -->` (`gh pr view <n> --json author,baseRefName,comments,commits,headRefOid`). Save it to `$R/map.md`; list items with `parseMap` (see `/vet:map` stage 4). Note `depth`: round cap is **2** light, **5** deep. A map whose Head is no longer on the PR → stop, run `/vet:map`.
+Newest comment with `trusted` true whose first line is `<!-- vet-map -->` (`node "$F" pr-view <n>`; `map-format.md` → "Trusted posters": the adapter sets the flag, never re-derive it). The same output has `baseRefName`, `headRefOid` and `commits`. Save it to `$R/map.md`; list items with `parseMap` (see `/vet:map` stage 4). Note `depth`: round cap is **2** light, **5** deep. A map whose Head is no longer on the PR → stop, run `/vet:map`.
 
 ## 2. Plan each item
 
@@ -25,7 +25,7 @@ Newest comment by a trusted poster (`map-format.md` → "Trusted posters") whose
 | `C` contradiction | Escalate: the human picks the winner. Never you |
 | RISKY `L` row | `kept: <reason>` or fix, on the merits |
 | `S` SHOULD-FIX | Fix only if cheap; else `deferred to <issue>: <reason>` or `won't fix: <reason>`. A Nit never starts a round |
-| `P` pre-existing | `gh issue create`, then `filed as #<n>` |
+| `P` pre-existing | `node "$F" issue-create --title <t> --body-file <file>` (prints the new issue's URL), then `filed as #<n>` |
 | `E` escalation | The human's call (step 4) |
 | A finding you think is wrong | Dispute it with the re-checker. Never dismiss on your own |
 
@@ -51,13 +51,13 @@ Human present → ask each now, one question naming the item and its terminal ac
 Write `$R/reply.md` per the reply skeleton, one block per item in map order, every re-check report fenced at the end. Write each **Detail** from the commit as you read it, not from memory. Then:
 
 ```bash
-gh pr view <n> --json commits --jq '.commits[].oid' > "$R/commits.txt"
+node "$F" pr-view <n> | node -e 'for (const c of JSON.parse(require("fs").readFileSync(0, "utf8")).commits) console.log(c.oid)' > "$R/commits.txt"
 node "${CLAUDE_PLUGIN_ROOT}/scripts/check-reply.cjs" --map "$R/map.md" --reply "$R/reply.md" --commits "$R/commits.txt"
 ```
 
 Post only on `OK`. A failure is a missing decision, not a wording problem: decide it, never reword a placeholder past the checker.
 
-Human present → show the reply, ask once: *"Post this reply on #<n>?"* `--auto` → post. `gh pr comment <n> --body-file "$R/reply.md"`.
+Human present → show the reply, ask once: *"Post this reply on #<n>?"* `--auto` → post. `node "$F" pr-comment <n> "$R/reply.md"`.
 
 Then stop. No escalations → next is `/vet:verify`. Escalations open → the human answers, then `/vet:address` runs again. Pushing code now voids the reply.
 
