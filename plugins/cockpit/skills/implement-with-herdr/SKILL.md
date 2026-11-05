@@ -83,8 +83,9 @@ took. A tier change restarts the worker (§4).
 - A lane is a chain of tickets that must run in order (blocking edges, or shared files still changing). A ticket with
   no edges is a lane of one. Independent lanes run in parallel.
 - Within a lane, order tickets so the tier changes as few times as the edges allow.
-- At most 6 workers at once; 3 when `memory_pressure | tail -1` shows under 25% free or `sysctl -n vm.loadavg` is over
-  15. Queued lanes go to the first worker that frees up (§6): a warm tab skips a session start.
+- At most 6 workers at once; 3 when free memory is under 25% or `sysctl -n vm.loadavg` is over 15 (macOS). Free memory: macOS
+  `memory_pressure | tail -1`; Windows `powershell -NoProfile -Command '$o=Get-CimInstance Win32_OperatingSystem; [int](100*$o.FreePhysicalMemory/$o.TotalVisibleMemorySize)'` (percent free);
+  Linux `free | awk '/^Mem:/{print int(100*$7/$2)}'` (percent available). Queued lanes go to the first worker that frees up (§6): a warm tab skips a session start.
 
 ## 4. Start a worker
 

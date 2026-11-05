@@ -66,7 +66,7 @@ From the plan's tasks or the tickets' blocking edges, build the dependency graph
 ## 3. Start the lanes
 
 Stagger starts by a few seconds; each worker is a whole Claude session (a few hundred MB). Run at most **6** at
-once, **3** when `memory_pressure | tail -1` shows under 25% free or `sysctl -n vm.loadavg` is over 15. Queue the rest.
+once, **3** when free memory is under 25% or `sysctl -n vm.loadavg` is over 15 (macOS). Free memory: macOS `memory_pressure | tail -1`; Windows `powershell -NoProfile -Command '$o=Get-CimInstance Win32_OperatingSystem; [int](100*$o.FreePhysicalMemory/$o.TotalVisibleMemorySize)'` (percent free); Linux `free | awk '/^Mem:/{print int(100*$7/$2)}'` (percent available). Queue the rest.
 
 ```bash
 tab=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --label lane-a --no-focus)
