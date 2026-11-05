@@ -5,12 +5,12 @@ import { CACHE_COLOR, cacheLabel, cacheState, cardLines, nextWake, handoffDue, h
 import type { CacheParams } from './cache'
 import type { Handoff } from '../types'
 
-/** The Claude config folder, as Claude Code itself reads it from CLAUDE_CONFIG_DIR. Unset, it is ~/.claude, where Claude Code keeps it. */
+/** The Claude config folder: CLAUDE_CONFIG_DIR, else ~/.claude under HOME or, where herdr on Windows starts Claude with only USERPROFILE set, under USERPROFILE. */
 const claudeDir = async ($: EngineInterface) => {
   const dir = await $.env.get('CLAUDE_CONFIG_DIR')
   if (dir) return dir
-  const home = await $.env.get('HOME')
-  if (!home) throw new Error('neither CLAUDE_CONFIG_DIR nor HOME is set')
+  const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
+  if (!home) throw new Error('none of CLAUDE_CONFIG_DIR, HOME or USERPROFILE is set')
   return `${home}/.claude`
 }
 
@@ -161,7 +161,7 @@ async function writeState($: EngineInterface): Promise<void> {
     handoff: await handoffForState($),
     at: await $.clock.now(),
   }
-  await $.fs.write(`${await claudeDir($)}/ctx/cache/${pane ?? session}.json`, JSON.stringify(state) + '\n').catch(err => $.ui.log(`could not write the cache state: ${String(err).slice(0, 120)}`))
+  await $.fs.write(`${await claudeDir($)}/ctx/cache/${(pane ?? session).replace(/:/g, '_')}.json`, JSON.stringify(state) + '\n').catch(err => $.ui.log(`could not write the cache state: ${String(err).slice(0, 120)}`))
 }
 
 /** The timer fired, or the person is back: the footer is redrawn at the time, the handoff tried if due, the next wake set. */

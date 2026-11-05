@@ -5,6 +5,9 @@
 # Reads $CLAUDE_CONFIG_DIR/ctx/cache/<pane>.json (written by the cache-timer mod).
 # Prints one line; exit 0 warm or working, 1 expired, 2 unknown.
 set -euo pipefail
+# The native Windows jq writes CRLF; -b (--binary) stops that. An older jq without the flag is used as it is. A function, not a
+# pipe, so stdin and exit codes (jq -e) pass straight through.
+if jq -b -n . >/dev/null 2>&1; then jq() { command jq -b "$@"; }; fi
 target="${1:-}"; json="${2:-}"
 if [[ -z "$target" || "$target" == -h || "$target" == --help ]]; then
   sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 2
@@ -14,7 +17,7 @@ info="$(herdr agent get "$target" 2>/dev/null || true)"
 pane="$(jq -r '.result.agent.pane_id // empty' <<<"$info" 2>/dev/null || true)"
 session="$(jq -r '.result.agent.agent_session.value // empty' <<<"$info" 2>/dev/null || true)"
 [[ -z "$pane" && "$target" =~ ^w[A-Za-z0-9]+:p[0-9]+$ ]] && pane="$target"
-file="$dir/$pane.json"
+file="$dir/${pane//:/_}.json"   # NTFS reads a colon as a data stream
 if [[ -z "$pane" || ! -f "$file" ]]; then
   echo "${pane:-$target} unknown (no cache state recorded)"; exit 2
 fi

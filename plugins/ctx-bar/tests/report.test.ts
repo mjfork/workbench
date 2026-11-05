@@ -28,7 +28,7 @@ test('a herdr session reports its fill, cost and last turns at start, on each me
   const { writes, cost } = engine(on, ENV)
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
   expect(writes.at(-1)).toEqual({
-    path: '/home/ubuntu/.claude/ctx/w9B:p1.json',
+    path: '/home/ubuntu/.claude/ctx/w9B_p1.json',
     report: { pane: 'w9B:p1', workspace: 'w9B', tokens: 120_000, window: 1_000_000, at: 1_000, isEnded: false, startedAt: 500, usd: 2, turns: [] },
   })
 
@@ -64,4 +64,32 @@ test('outside herdr nothing is written', async ($, on) => {
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true } as never)
   await $.session.measure({ context: { tokens: 150_000, window: 1_000_000, percent: 15 }, rateLimits: [], changed: ['context'] })
   expect(writes).toEqual([])
+})
+
+const START = { cwd: '/tmp', surface: 'terminal', isInteractive: true } as never
+const WIN = { OS: 'Windows_NT', HERDR_ENV: '1', HERDR_PANE_ID: 'w9B:p1', HERDR_WORKSPACE_ID: 'w9B' }
+
+test('on Windows with only USERPROFILE set, the report lands under the profile folder and the pane id stays real inside', async ($, on) => {
+  const { writes } = engine(on, { ...WIN, USERPROFILE: 'C:/Users/me' })
+  await $.session.start(START)
+  expect(writes.at(-1)?.path).toMatch(/\/Users\/me\/\.claude\/ctx\/w9B_p1\.json$/)
+  expect(writes.at(-1)?.report.pane).toBe('w9B:p1')
+})
+
+test('the config folder: CLAUDE_CONFIG_DIR wins over HOME, HOME over USERPROFILE', async ($, on) => {
+  const { writes } = engine(on, { ...WIN, CLAUDE_CONFIG_DIR: '/cfg', HOME: '/home/h', USERPROFILE: 'C:/Users/me' })
+  await $.session.start(START)
+  expect(writes.at(-1)?.path).toBe('/cfg/ctx/w9B_p1.json')
+})
+
+test('HOME wins over USERPROFILE', async ($, on) => {
+  const { writes } = engine(on, { ...WIN, HOME: '/home/h', USERPROFILE: 'C:/Users/me' })
+  await $.session.start(START)
+  expect(writes.at(-1)?.path).toBe('/home/h/.claude/ctx/w9B_p1.json')
+})
+
+test('with none of the three set, session start still does not throw and writes nothing', async ($, on) => {
+  const { writes } = engine(on, WIN)
+  await $.session.start(START)
+  expect(writes.length).toBe(0)
 })

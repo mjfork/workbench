@@ -8,6 +8,9 @@
 # starts or adopts a session; it holds until cleared. Takes effect on the next prompt.
 # --driver-name: the driver's session name as SendMessage takes it (ListAgents); without it the worker is told to look it up.
 set -euo pipefail
+# The native Windows jq writes CRLF; -b (--binary) stops that. An older jq without the flag is used as it is. A function, not a
+# pipe, so stdin and exit codes (jq -e) pass straight through.
+if jq -b -n . >/dev/null 2>&1; then jq() { command jq -b "$@"; }; fi
 dir="${TURN_MODE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/ctx/mode}"
 usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 pane_of() {
@@ -17,7 +20,7 @@ pane_of() {
   printf '%s' "$p"
 }
 [[ $# -ge 1 && "$1" != -h && "$1" != --help ]] || usage
-pane="$(pane_of "$1")"; file="$dir/$pane.json"
+pane="$(pane_of "$1")"; file="$dir/${pane//:/_}.json"   # NTFS reads a colon as a data stream
 if [[ $# -eq 1 ]]; then
   if [[ -f "$file" ]]; then
     jq -r '"\(.pane) \(.mode)\(if .driver then " (driver \(.driver)\(if .driverName then ", \(.driverName)" else "" end))" else "" end), set by \(.setBy)"' "$file"

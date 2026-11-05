@@ -166,7 +166,7 @@ for (const show of ['context', 'cache'] as const) {
     const files: Record<string, string> = {
       [`${dir}/w1:p1.json`]: JSON.stringify({ pane: 'w1:p1', workspace: 'w1', tokens: 600_000, window: 1_000_000, at: NOW, isEnded: false }),
       [`${dir}/w2:p1.json`]: JSON.stringify({ pane: 'w2:p1', workspace: 'w2', tokens: 400_000, window: 1_000_000, at: NOW, isEnded: false }),
-      [`${dir}/cache/w1:p1.json`]: JSON.stringify({ expiresAt: NOW + 31 * 60_000, ttlMs: 3_600_000, isWorking: false }),
+      [`${dir}/cache/w1_p1.json`]: JSON.stringify({ expiresAt: NOW + 31 * 60_000, ttlMs: 3_600_000, isWorking: false }),
     }
     on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1' } as Record<string, string>)[e.name] }))
     on('clock.now', () => ({ value: NOW }))
@@ -214,10 +214,10 @@ for (const expired of ['hide', 'show'] as const) {
       [`${dir}/fresh:p1.json`]: report('fresh:p1', 800_000),
       [`${dir}/busy:p1.json`]: report('busy:p1', 200_000),
       [`${dir}/plain:p1.json`]: report('plain:p1', 100_000),
-      [`${dir}/cache/warm:p1.json`]: cache(NOW + 20 * 60_000),
-      [`${dir}/cache/cold:p1.json`]: cache(NOW - 60_000),
-      [`${dir}/cache/fresh:p1.json`]: cache(null),
-      [`${dir}/cache/busy:p1.json`]: cache(NOW - 60_000, true),
+      [`${dir}/cache/warm_p1.json`]: cache(NOW + 20 * 60_000),
+      [`${dir}/cache/cold_p1.json`]: cache(NOW - 60_000),
+      [`${dir}/cache/fresh_p1.json`]: cache(null),
+      [`${dir}/cache/busy_p1.json`]: cache(NOW - 60_000, true),
     }
     on('env.get', (_$, e) => ({ value: ({ CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HERDR_ENV: '1' } as Record<string, string>)[e.name] }))
     on('clock.now', () => ({ value: NOW }))
