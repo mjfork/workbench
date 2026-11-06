@@ -32,13 +32,15 @@ fake_jq() {
   mkdir -p "$1"
   cat > "$1/jq" <<'FAKE'
 #!/usr/bin/env bash
-bin=0; for a in "$@"; do [[ $a == -b || $a == --binary ]] && bin=1; done
+# The real jq gets -b only if it knows it (jq 1.7 and later; Debian's 1.6 does not), and never twice.
+bin=0; args=(); for a in "$@"; do if [[ $a == -b || $a == --binary ]]; then bin=1; else args+=("$a"); fi; done
+rb=(); "$REAL_JQ" -b -n . >/dev/null 2>&1 && rb=(-b)
 if [[ ${FAKE_JQ_OLD:-0} == 1 ]]; then
   [[ $bin == 1 ]] && { echo "jq: Unknown arguments" >&2; exit 2; }
-  exec "$REAL_JQ" -b "$@"   # what an older jq does everywhere else: plain LF output
+  exec "$REAL_JQ" ${rb[@]+"${rb[@]}"} ${args[@]+"${args[@]}"}   # what an older jq does everywhere else: plain LF output
 fi
-[[ $bin == 1 ]] && exec "$REAL_JQ" "$@"
-out=$(mktemp); "$REAL_JQ" "$@" > "$out"; rc=$?
+[[ $bin == 1 ]] && exec "$REAL_JQ" ${rb[@]+"${rb[@]}"} ${args[@]+"${args[@]}"}
+out=$(mktemp); "$REAL_JQ" ${args[@]+"${args[@]}"} > "$out"; rc=$?
 awk '{ printf "%s\r\n", $0 }' "$out"; rm -f "$out"; exit $rc
 FAKE
   chmod +x "$1/jq"
