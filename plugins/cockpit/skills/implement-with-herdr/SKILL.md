@@ -144,7 +144,7 @@ resend with `/mattpocock-skills:tdd <ticket-id>` as the first line. With no buil
 `Build ticket <ticket-id>: write failing tests for its acceptance criteria, make them pass, run the full test suite.`
 and the rest is the same.
 
-Before each prompt, note the pane's `usd` from `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/ctx/<pane>.json`. The ticket's cost is
+Before each prompt, note the pane's `usd` from the pane's file in the ctx folder of the Claude config folder (`$CLAUDE_CONFIG_DIR`, else `.claude` under `$HOME`, or under `%USERPROFILE%` on Windows where HOME is unset): `ctx/<pane>.json`, with the pane id's `:` written as `_` (`w1:p3` is `ctx/w1_p3.json`). The ticket's cost is
 the reading at `DONE` minus that one, or the whole reading if it went down (a `/clear` started a new session).
 
 On `DONE`:

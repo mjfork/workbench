@@ -38,7 +38,7 @@ herdr agent start r<n> --kind claude --pane "$pane" -- --model opus --effort med
 
 ## 3. Feed one stage at a time
 
-`/clear` before every stage: the map, reply and verdict live on the PR, so no stage needs the last one's context. Note the pane's `usd` from `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/ctx/<pane>.json` before each prompt.
+`/clear` before every stage: the map, reply and verdict live on the PR, so no stage needs the last one's context. Note the pane's `usd` from the pane's file in the ctx folder of the Claude config folder (`$CLAUDE_CONFIG_DIR`, else `.claude` under `$HOME`, or under `%USERPROFILE%` on Windows where HOME is unset): `ctx/<pane>.json`, with the pane id's `:` written as `_` (`w1:p3` is `ctx/w1_p3.json`), before each prompt.
 
 | Stage | Prompt |
 |---|---|

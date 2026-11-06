@@ -101,7 +101,7 @@ carries the slash command, the lane file path, and those three rules; nothing pa
 
 ## 5. Keep the workers lean
 
-- cockpit's ctx-bar writes each session's context size to `$CLAUDE_CONFIG_DIR/ctx/<pane>.json` (`tokens`, `window`).
+- cockpit's ctx-bar writes each session's context size to `ctx/<pane>.json` in the Claude config folder (`$CLAUDE_CONFIG_DIR`, else `.claude` under `$HOME`, or under `%USERPROFILE%` on Windows where HOME is unset), with the pane id's `:` written as `_` (`w1:p3` is `ctx/w1_p3.json`); it holds `tokens` and `window`.
   Check it instead of asking. A worker over about 60% that is between tasks and idle: send `/compact`.
 - A finished lane's tab is a warm session: for the next queued lane, `herdr agent prompt lane-a "/clear"`, then send
   the new lane's prompt. No startup, no new process.
