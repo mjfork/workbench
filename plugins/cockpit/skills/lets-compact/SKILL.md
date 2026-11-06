@@ -17,7 +17,7 @@ If that is empty, take the next step from the last few turns and say your guess 
   guessed next step.
 - **`/compact <instructions>`** otherwise.
 
-Size: `tokens` in `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/ctx/$HERDR_PANE_ID.json`, when it exists.
+Size: `tokens` in this pane's `ctx/<pane>.json` in the Claude config folder (`$CLAUDE_CONFIG_DIR`, else `.claude` under `$HOME`, or under `%USERPROFILE%` on Windows where HOME is unset), where `<pane>` is `$HERDR_PANE_ID` with `:` written as `_` (`w1:p3` is `ctx/w1_p3.json`), when it exists.
 
 ## 2. Write the instructions
 

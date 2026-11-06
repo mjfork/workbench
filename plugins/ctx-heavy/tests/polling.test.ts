@@ -1,6 +1,7 @@
 import type { On, RenderPropsOf } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 import { expect, mock, test } from 'claude-code/testing'
+import { posix } from './posix'
 
 // Every herdr session draws the same heaviest-sessions line. These hold the reading of the per-pane reports to one
 // session, which writes a summary the others read, and hold the drawn state still while nothing shown changes.
@@ -18,39 +19,41 @@ const report = (pane: string, tokens: number, extra: Record<string, unknown> = {
 
 function reports(): Record<string, File> {
   return {
-    [`${CTX}/w6A:p1.json`]: { text: report('w6A:p1', 703_931), mtimeMs: NOW - 1000 },
-    [`${CTX}/w6A:p2.json`]: { text: report('w6A:p2', 650_000), mtimeMs: NOW - 1000 },
-    [`${CTX}/w71:p1.json`]: { text: report('w71:p1', 309_572), mtimeMs: NOW - 1000 },
-    [`${CTX}/w67:p1.json`]: { text: report('w67:p1', 183_552), mtimeMs: NOW - 1000 },
-    [`${CTX}/w8P:p1.json`]: { text: report('w8P:p1', 155_158), mtimeMs: NOW - 1000 },
-    [`${CTX}/w99:p1.json`]: { text: report('w99:p1', 900_000, { isEnded: true }), mtimeMs: NOW - 1000 },
+    [`${CTX}/w6A_p1.json`]: { text: report('w6A:p1', 703_931), mtimeMs: NOW - 1000 },
+    [`${CTX}/w6A_p2.json`]: { text: report('w6A:p2', 650_000), mtimeMs: NOW - 1000 },
+    [`${CTX}/w71_p1.json`]: { text: report('w71:p1', 309_572), mtimeMs: NOW - 1000 },
+    [`${CTX}/w67_p1.json`]: { text: report('w67:p1', 183_552), mtimeMs: NOW - 1000 },
+    [`${CTX}/w8P_p1.json`]: { text: report('w8P:p1', 155_158), mtimeMs: NOW - 1000 },
+    [`${CTX}/w99_p1.json`]: { text: report('w99:p1', 900_000, { isEnded: true }), mtimeMs: NOW - 1000 },
   }
 }
 
-function engine(on: On, files: Record<string, File>) {
+function engine(on: On, files: Record<string, File>, envOverride?: Record<string, string>) {
   const reads: string[] = []
   const lists: string[] = []
   const sets: string[] = []
   const clock = mock.clock(on, { now: NOW })
   const env: Record<string, string> = { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HOME: '/home/ubuntu', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
+  if (envOverride !== undefined) for (const k of Object.keys(env)) delete env[k]
+  Object.assign(env, envOverride)
   on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('fs.list', (_$, e) => {
     // A poll lists three folders (reports, modes, caches): counted once, by the reports'.
-    if (e.path === CTX) lists.push(e.path)
-    const dir = `${e.path}/`
+    if (posix(e.path) === CTX) lists.push(posix(e.path))
+    const dir = `${posix(e.path)}/`
     const entries = Object.entries(files)
       .filter(([path]) => path.startsWith(dir) && !path.slice(dir.length).includes('/'))
       .map(([path, f]) => ({ name: path.slice(dir.length), kind: 'file' as const, size: f.text.length, mtimeMs: f.mtimeMs, isLink: false }))
     return { value: [...entries, { name: 'heavy', kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false }] } as never
   })
   on('fs.read', (_$, e) => {
-    reads.push(e.path)
-    const f = files[e.path]
-    if (f === undefined) throw new Error(`ENOENT: ${e.path}`)
+    reads.push(posix(e.path))
+    const f = files[posix(e.path)]
+    if (f === undefined) throw new Error(`ENOENT: ${posix(e.path)}`)
     return { value: f.text } as never
   })
   on('fs.write', (_$, e) => {
-    files[e.path] = { text: e.text, mtimeMs: NOW }
+    files[posix(e.path)] = { text: e.text, mtimeMs: NOW }
     return { value: undefined } as never
   })
   on('state.set', { plugin: 'ctx-heavy' }, ($, e, next) => {
@@ -114,7 +117,7 @@ test('holding the lease, a poll reads only the reports that changed since it las
   // It renewed the lease all the same.
   expect(JSON.parse(e.files[SUMMARY]!.text).at).toBe(NOW + 10_000)
   // One session reports a new fill: that file alone is read, and the summary carries it.
-  e.files[`${CTX}/w8P:p1.json`] = { text: report('w8P:p1', 800_000), mtimeMs: NOW + 15_000 }
+  e.files[`${CTX}/w8P_p1.json`] = { text: report('w8P:p1', 800_000), mtimeMs: NOW + 15_000 }
   await e.clock.advance(10_000)
   await settle()
   expect(e.reportReads()).toBe(7)
@@ -158,7 +161,7 @@ test('the drawn state is written only when what shows changes, and the clock mov
   expect(e.sets.filter(key => key === 'heavy').length).toBe(1)
   expect(e.sets.filter(key => key === 'tick').length).toBeLessThanOrEqual(1)
   // A fill changes: one write.
-  e.files[`${CTX}/w71:p1.json`] = { text: report('w71:p1', 320_000), mtimeMs: NOW + 55_000 }
+  e.files[`${CTX}/w71_p1.json`] = { text: report('w71:p1', 320_000), mtimeMs: NOW + 55_000 }
   await e.clock.advance(10_000)
   await settle()
   expect(e.sets.filter(key => key === 'heavy').length).toBe(2)
@@ -167,7 +170,7 @@ test('the drawn state is written only when what shows changes, and the clock mov
 test("the card's ages are reckoned from the clock when drawn, and move on while nothing else changes", async ($, on) => {
   const files = reports()
   const turn = { at: NOW - 180_000, durationMs: 42_000, usd: 0.5, inputTokens: 95_010, outputTokens: 1_200, model: 'claude-opus-5-5', reason: 'answer' }
-  files[`${CTX}/w6A:p1.json`] = { text: report('w6A:p1', 703_931, { turns: [turn] }), mtimeMs: NOW - 1000 }
+  files[`${CTX}/w6A_p1.json`] = { text: report('w6A:p1', 703_931, { turns: [turn] }), mtimeMs: NOW - 1000 }
   const e = engine(on, files)
   await started($)
   const props = { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120 } as RenderPropsOf['AbovePrompt']
@@ -300,11 +303,11 @@ test("a press on one of this mod's rows wakes it", async ($, on) => {
 
 test('a pane an agent drives is left out; each row carries its cache, and the footer shows its time left', async ($, on) => {
   const files = reports()
-  files[`${CTX}/mode/w6A:p1.json`] = { text: JSON.stringify({ pane: 'w6A:p1', mode: 'agentic', driver: 'w9B:p1', setBy: 'agent', at: NOW }), mtimeMs: NOW }
-  files[`${CTX}/mode/w6A:p2.json`] = { text: JSON.stringify({ pane: 'w6A:p2', mode: 'realtime', driver: null, setBy: 'human', at: NOW }), mtimeMs: NOW }
-  files[`${CTX}/cache/w6A:p2.json`] = { text: JSON.stringify({ pane: 'w6A:p2', expiresAt: NOW + 31 * 60_000 + 5000, ttlMs: 3_600_000, isWorking: false }), mtimeMs: NOW }
-  files[`${CTX}/cache/w71:p1.json`] = { text: JSON.stringify({ pane: 'w71:p1', expiresAt: NOW + 4 * 60_000 + 5000, ttlMs: 3_600_000, isWorking: false }), mtimeMs: NOW }
-  files[`${CTX}/cache/w67:p1.json`] = { text: JSON.stringify({ pane: 'w67:p1', expiresAt: NOW + 50 * 60_000, ttlMs: 3_600_000, isWorking: true }), mtimeMs: NOW }
+  files[`${CTX}/mode/w6A_p1.json`] = { text: JSON.stringify({ pane: 'w6A:p1', mode: 'agentic', driver: 'w9B:p1', setBy: 'agent', at: NOW }), mtimeMs: NOW }
+  files[`${CTX}/mode/w6A_p2.json`] = { text: JSON.stringify({ pane: 'w6A:p2', mode: 'realtime', driver: null, setBy: 'human', at: NOW }), mtimeMs: NOW }
+  files[`${CTX}/cache/w6A_p2.json`] = { text: JSON.stringify({ pane: 'w6A:p2', expiresAt: NOW + 31 * 60_000 + 5000, ttlMs: 3_600_000, isWorking: false }), mtimeMs: NOW }
+  files[`${CTX}/cache/w71_p1.json`] = { text: JSON.stringify({ pane: 'w71:p1', expiresAt: NOW + 4 * 60_000 + 5000, ttlMs: 3_600_000, isWorking: false }), mtimeMs: NOW }
+  files[`${CTX}/cache/w67_p1.json`] = { text: JSON.stringify({ pane: 'w67:p1', expiresAt: NOW + 50 * 60_000, ttlMs: 3_600_000, isWorking: true }), mtimeMs: NOW }
   const e = engine(on, files)
   await started($)
   const summary = JSON.parse(e.files[SUMMARY]!.text) as { rows: { pane: string; cache?: unknown }[] }
@@ -320,8 +323,32 @@ test('a pane an agent drives is left out; each row carries its cache, and the fo
   await ui.unmount()
 
   // The orchestrator hands the pane back (async): it is listed again on the next poll.
-  files[`${CTX}/mode/w6A:p1.json`] = { text: JSON.stringify({ pane: 'w6A:p1', mode: 'async', driver: null, setBy: 'human', at: NOW + 5000 }), mtimeMs: NOW + 5000 }
+  files[`${CTX}/mode/w6A_p1.json`] = { text: JSON.stringify({ pane: 'w6A:p1', mode: 'async', driver: null, setBy: 'human', at: NOW + 5000 }), mtimeMs: NOW + 5000 }
   await e.clock.advance(10_000)
   await settle()
   expect((JSON.parse(e.files[SUMMARY]!.text) as { rows: { pane: string }[] }).rows[0]!.pane).toBe('w6A:p1')
+})
+
+const WIN = { OS: 'Windows_NT', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
+const MY_CTX = '/Users/me/.claude/ctx'
+
+test('on Windows with only USERPROFILE set, it reads the reports and writes its summary under the profile folder', async ($, on) => {
+  const files: Record<string, File> = {}
+  for (const [path, f] of Object.entries(reports())) files[path.replace(CTX, MY_CTX)] = f
+  const e = engine(on, files, { ...WIN, USERPROFILE: 'C:/Users/me' })
+  await started($)
+  expect(e.files[`${MY_CTX}/heavy/summary.json`]).toBeDefined()
+  expect((JSON.parse(e.files[`${MY_CTX}/heavy/summary.json`]!.text) as { rows: unknown[] }).rows.length).toBeGreaterThan(0)
+})
+
+test('CLAUDE_CONFIG_DIR wins over HOME and USERPROFILE', async ($, on) => {
+  const e = engine(on, {}, { ...WIN, CLAUDE_CONFIG_DIR: '/cfg', HOME: '/home/h', USERPROFILE: 'C:/Users/me' })
+  await started($)
+  expect(Object.keys(e.files)).toEqual(['/cfg/ctx/heavy/summary.json'])
+})
+
+test('HOME wins over USERPROFILE', async ($, on) => {
+  const e = engine(on, {}, { ...WIN, HOME: '/home/h', USERPROFILE: 'C:/Users/me' })
+  await started($)
+  expect(Object.keys(e.files)).toEqual(['/home/h/.claude/ctx/heavy/summary.json'])
 })

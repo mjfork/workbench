@@ -13,17 +13,18 @@ Write nothing but `.cockpit/review.md` (the PR table: pr, worker, stage, verify,
 
 ## 1. Read the PRs, once
 
-`gh pr view <n> --json number,title,headRefName,baseRefName,isDraft,state` each. Closed or draft → skip, say so. Keep the table out of git (`echo .cockpit/ >> "$(git rev-parse --git-common-dir)/info/exclude"`).
+Find the forge adapter in the installed vet plugin (it is the only thing that talks to the code host; never call a host CLI yourself): `forge=$(ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/*/vet/*/scripts/forge.cjs | sort -V | tail -1)`. Not found → stop and say vet must be installed. `node "$forge" pr-view <n>` each (JSON: `number`, `title`, `headRefName`, `baseRefName`, `isDraft`, `state`). Closed or draft → skip, say so. Keep the table out of git (`echo .cockpit/ >> "$(git rev-parse --git-common-dir)/info/exclude"`).
 
 ## 2. Start a worker per PR
 
-At most 6 at once; 3 when `memory_pressure | tail -1` shows under 25% free or `sysctl -n vm.loadavg` is over 15. Queue the rest. Stagger starts by a few seconds.
+At most 6 at once; 3 when free memory is under 25% or `sysctl -n vm.loadavg` is over 15 (macOS). Free memory: macOS `memory_pressure | tail -1`; Windows `powershell -NoProfile -Command '$o=Get-CimInstance Win32_OperatingSystem; [int](100*$o.FreePhysicalMemory/$o.TotalVisibleMemorySize)'` (percent free); Linux `free | awk '/^Mem:/{print int(100*$7/$2)}'` (percent available). Queue the rest. Stagger starts by a few seconds.
 
 ```bash
 tm=$(ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/*/turn-mode/*/bin/turn-mode.sh | sort -V | tail -1)
+forge=$(ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/*/vet/*/scripts/forge.cjs | sort -V | tail -1)   # shell state does not persist between calls
 me=<your session name: ListAgents' first line, "This session is <name>">   # how workers SendMessage you
 wt="$(git rev-parse --show-toplevel).r<n>"
-git worktree add --detach "$wt" && git -C "$wt" fetch -q origin && (cd "$wt" && gh pr checkout <n> --branch pr-<n>)
+git worktree add --detach "$wt" && git -C "$wt" fetch -q origin && node "$forge" -C "$wt" pr-checkout <n> pr-<n>
 tab=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$wt" --label r<n> --no-focus)
 pane=$(printf '%s' "$tab" | jq -r '.result.root_pane.pane_id')
 herdr agent start r<n> --kind claude --pane "$pane" -- --model opus --effort medium --autocompact <k> \
@@ -37,7 +38,7 @@ herdr agent start r<n> --kind claude --pane "$pane" -- --model opus --effort med
 
 ## 3. Feed one stage at a time
 
-`/clear` before every stage: the map, reply and verdict live on the PR, so no stage needs the last one's context. Note the pane's `usd` from `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/ctx/<pane>.json` before each prompt.
+`/clear` before every stage: the map, reply and verdict live on the PR, so no stage needs the last one's context. Note the pane's `usd` from the pane's file in the ctx folder of the Claude config folder (`$CLAUDE_CONFIG_DIR`, else `.claude` under `$HOME`, or under `%USERPROFILE%` on Windows where HOME is unset): `ctx/<pane>.json`, with the pane id's `:` written as `_` (`w1:p3` is `ctx/w1_p3.json`), before each prompt.
 
 | Stage | Prompt |
 |---|---|
@@ -45,7 +46,7 @@ herdr agent start r<n> --kind claude --pane "$pane" -- --model opus --effort med
 | address | `/vet:address <n> --auto` + worktree line |
 | verify | `/vet:verify <n> --post` + worktree line |
 
-Worktree line: `You are already on PR <n>'s head as branch pr-<n> in your own worktree: skip gh pr checkout; git pull --ff-only first; push with 'git push origin HEAD:<headRefName>'. Do not open tabs or sessions.`
+Worktree line: `You are already on PR <n>'s head as branch pr-<n> in your own worktree: skip the skill's `pr-checkout` step; git pull --ff-only first; push with 'git push origin HEAD:<headRefName>'. Do not open tabs or sessions.`
 
 `--auto` keeps every seat on Opus and posts without asking. Verify runs from a cleared context and dispatches its own fresh verifier, so nothing that fixed the code judges it.
 
@@ -58,7 +59,7 @@ Worktree line: `You are already on PR <n>'s head as branch pr-<n> in your own wo
 - **verify FAIL** → `/clear`, `/vet:address <n> --auto` + worktree line + `Fix what /vet:verify failed: <its PROBLEMS lines>`, then verify again. Two FAILs → stop that PR, hand it over.
 - **`BLOCKED`** → `/effort high` and resend the stage once; again → hand it over.
 - **`NEEDS-INPUT`** or open escalations → ask the person, one question per escalation, naming the PR and the item. Send the answers as `/vet:address <n>` (no `--auto`) + worktree line + `The human decided: <id>: <answer>; ...`.
-- **A free worker** takes the next queued PR: `git -C <wt> fetch -q origin`, `(cd <wt> && gh pr checkout <m> --branch pr-<m>)`, `/clear`, map. Nothing queued → close its tab.
+- **A free worker** takes the next queued PR: `git -C <wt> fetch -q origin`, `node "$forge" -C <wt> pr-checkout <m> pr-<m>` (re-find `$forge` as in step 2 first), `/clear`, map. Nothing queued → close its tab.
 - Compact yourself once the table is current and your context is over 100k.
 
 ## 5. Finish

@@ -1,5 +1,6 @@
 import type { On } from 'claude-code'
 import { mock } from 'claude-code/testing'
+import { posix } from './posix'
 
 export const MIN = 60_000
 
@@ -53,20 +54,20 @@ export function engine(on: On, opts: { env?: Record<string, string>; tail?: stri
     const stdout = isAgentGet ? JSON.stringify({ result: { agent: { focused: opts.focused ?? true } } }) : '[]'
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
-  on('fs.exists', (_$, e) => ({ value: e.path in seen.files }))
+  on('fs.exists', (_$, e) => ({ value: posix(e.path) in seen.files }))
   // The transcript, the one file read here; anything else is missing.
   on('fs.stat', (_$, e) => {
-    seen.events.push(`stat ${e.path}`)
-    if (e.path !== transcriptAt()) throw Object.assign(new Error(`ENOENT: ${e.path}`), { code: 'ENOENT' })
+    seen.events.push(`stat ${posix(e.path)}`)
+    if (posix(e.path) !== transcriptAt()) throw Object.assign(new Error(`ENOENT: ${posix(e.path)}`), { code: 'ENOENT' })
     return { value: { kind: 'file', size: new TextEncoder().encode(opts.tail ?? '').length, mtimeMs: 0, isLink: false } } as never
   })
   on('fs.read', (_$, e) => {
-    seen.events.push(`read ${e.path}`)
-    if (e.path !== transcriptAt()) throw Object.assign(new Error(`ENOENT: ${e.path}`), { code: 'ENOENT' })
+    seen.events.push(`read ${posix(e.path)}`)
+    if (posix(e.path) !== transcriptAt()) throw Object.assign(new Error(`ENOENT: ${posix(e.path)}`), { code: 'ENOENT' })
     return { value: opts.tail ?? '' } as never
   })
   // A folder's files, as given; any other folder is empty.
-  on('fs.list', (_$, e) => ({ value: (opts.dirs?.[e.path] ?? []).map(f => ({ ...f, kind: 'file', size: 1, isLink: false })) }) as never)
+  on('fs.list', (_$, e) => ({ value: (opts.dirs?.[posix(e.path)] ?? []).map(f => ({ ...f, kind: 'file', size: 1, isLink: false })) }) as never)
   on('session.id', () => ({ value: session.id }))
   on('ui.log', (_$, e) => {
     seen.logs.push(e.text)
@@ -74,8 +75,8 @@ export function engine(on: On, opts: { env?: Record<string, string>; tail?: stri
   })
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('fs.write', (_$, e) => {
-    seen.files[e.path] = e.text
-    seen.events.push(`write ${e.path}`)
+    seen.files[posix(e.path)] = e.text
+    seen.events.push(`write ${posix(e.path)}`)
     return { value: undefined } as never
   })
   on('session.cwd', () => ({ value: opts.cwd ?? '/home/ubuntu/projects/x' }))

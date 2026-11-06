@@ -83,8 +83,9 @@ took. A tier change restarts the worker (§4).
 - A lane is a chain of tickets that must run in order (blocking edges, or shared files still changing). A ticket with
   no edges is a lane of one. Independent lanes run in parallel.
 - Within a lane, order tickets so the tier changes as few times as the edges allow.
-- At most 6 workers at once; 3 when `memory_pressure | tail -1` shows under 25% free or `sysctl -n vm.loadavg` is over
-  15. Queued lanes go to the first worker that frees up (§6): a warm tab skips a session start.
+- At most 6 workers at once; 3 when free memory is under 25% or `sysctl -n vm.loadavg` is over 15 (macOS). Free memory: macOS
+  `memory_pressure | tail -1`; Windows `powershell -NoProfile -Command '$o=Get-CimInstance Win32_OperatingSystem; [int](100*$o.FreePhysicalMemory/$o.TotalVisibleMemorySize)'` (percent free);
+  Linux `free | awk '/^Mem:/{print int(100*$7/$2)}'` (percent available). Queued lanes go to the first worker that frees up (§6): a warm tab skips a session start.
 
 ## 4. Start a worker
 
@@ -143,7 +144,7 @@ resend with `/mattpocock-skills:tdd <ticket-id>` as the first line. With no buil
 `Build ticket <ticket-id>: write failing tests for its acceptance criteria, make them pass, run the full test suite.`
 and the rest is the same.
 
-Before each prompt, note the pane's `usd` from `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/ctx/<pane>.json`. The ticket's cost is
+Before each prompt, note the pane's `usd` from the pane's file in the ctx folder of the Claude config folder (`$CLAUDE_CONFIG_DIR`, else `.claude` under `$HOME`, or under `%USERPROFILE%` on Windows where HOME is unset): `ctx/<pane>.json`, with the pane id's `:` written as `_` (`w1:p3` is `ctx/w1_p3.json`). The ticket's cost is
 the reading at `DONE` minus that one, or the whole reading if it went down (a `/clear` started a new session).
 
 On `DONE`:
@@ -184,7 +185,9 @@ worker that is idle between tasks and above 100k.
    <integration-branch>`, then `/clear` (a restart on `--model sonnet --effort medium` if it runs another tier), and
    `/code-review medium --fix` (base: the branch the integration branch will merge into). Merge `review`, then run the tests.
 2. Close the tickets the way the tracker closes work. Close the tabs you opened, then `git worktree remove` each worktree
-   and `git branch -d` each merged lane and review branch.
+   and `git branch -d` each merged lane and review branch. On Windows a closed tab's shell can still hold its worktree folder
+   for a few seconds: wait before removing. If `git worktree remove` still prints "failed to delete ... Permission denied"
+   (exit 255), the worktree is already unregistered and emptied, so once the process has ended `rmdir` the empty folder.
 3. Report the table: ticket, tier, lane, result, commit, usd, plus the total (workers plus this session's own ctx
    file). List the three costliest tickets with their tier: that is where the tiering was wrong, if anywhere.
 

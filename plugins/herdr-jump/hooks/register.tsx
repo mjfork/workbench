@@ -7,12 +7,19 @@ import { plainBlock, plainText } from './text'
 import { findPanes, isPaneId, paneById, placeOf, rowsOf, workspaceByIdOrNumber } from './panes'
 import type { AgentJson, PaneJson, TabJson, WorkspaceJson } from './panes'
 
-/** The Claude config folder, as Claude Code itself reads it from CLAUDE_CONFIG_DIR. Unset, it is ~/.claude, where Claude Code keeps it. */
+/** The user's home folder: HOME, else USERPROFILE (on Windows, herdr sets only USERPROFILE). */
+const homeDir = async ($: EngineInterface) => {
+  const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
+  if (!home) throw new Error('neither HOME nor USERPROFILE is set')
+  return home
+}
+
+/** The Claude config folder: CLAUDE_CONFIG_DIR, else ~/.claude under HOME or, where herdr on Windows starts Claude with only USERPROFILE set, under USERPROFILE. */
 const claudeDir = async ($: EngineInterface) => {
   const dir = await $.env.get('CLAUDE_CONFIG_DIR')
   if (dir) return dir
-  const home = await $.env.get('HOME')
-  if (!home) throw new Error('neither CLAUDE_CONFIG_DIR nor HOME is set')
+  const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
+  if (!home) throw new Error('none of CLAUDE_CONFIG_DIR, HOME or USERPROFILE is set')
   return `${home}/.claude`
 }
 
@@ -47,8 +54,14 @@ const LIST_LOCK_STALE_MS = 30_000
 const IDLE_MS = 10 * 60_000
 /** The script that keeps the needs-you queue (`list`, `clear <pane>`, and the `stop` and `prompt` hook actions), shipped in this plugin's bin/. */
 const needsYou = ($: EngineInterface) => `${$.plugin.root}/bin/needs-you.sh`
-/** Prints a line each time herdr focuses this pane, its tab or its workspace: a blocked socket read, no timer. */
-const focusWatch = ($: EngineInterface) => `${$.plugin.root}/bin/focus-watch.sh`
+/**
+ * The command that prints a line each time herdr focuses this pane or its tab: a blocked socket read, no timer. On
+ * Windows herdr's API is a named pipe, which `nc -U` cannot reach, so a Node watcher reads it; elsewhere the shell one.
+ */
+const focusWatch = async ($: EngineInterface): Promise<string[]> =>
+  (await $.env.get('OS')) === 'Windows_NT'
+    ? ['node', `${$.plugin.root}/bin/focus-watch.cjs`]
+    : ['bash', `${$.plugin.root}/bin/focus-watch.sh`]
 const query = atom({ plugin: 'herdr-jump', key: 'query' } as const, '')
 const panes = atom({ plugin: 'herdr-jump', key: 'panes' } as const, [])
 const queue = atom({ plugin: 'herdr-jump', key: 'queue' } as const, [])
@@ -101,7 +114,7 @@ function watchFocus($: EngineInterface): void {
   isWatchingFocus = true
   void (async () => {
     try {
-      for await (const { stream, text } of $.process.spawn({ argv: ['bash', focusWatch($)] })) {
+      for await (const { stream, text } of $.process.spawn({ argv: await focusWatch($) })) {
         if (stream === 'stdout' && text.includes('focused')) onFocused($)
       }
     } catch {
@@ -263,7 +276,7 @@ function feedQueue($: EngineInterface, action: 'stop' | 'prompt', input: Record<
 
 /** A file in the script's queue folder for this herdr server. */
 const queueFile = async ($: EngineInterface, name: string) =>
-  `${await $.env.get('HOME')}/.herdr-queue/${(await $.env.get('HERDR_SESSION')) ?? 'default'}/${name}`
+  `${await homeDir($)}/.herdr-queue/${(await $.env.get('HERDR_SESSION')) ?? 'default'}/${name}`
 
 // The script's own test for a "Needs you" heading (awk, case-blind, on each line of the message); `\s` here also takes
 // spaces awk would not, which only starts the script more often.
@@ -290,7 +303,8 @@ function isStopNeeded(answer: string, hasItem: boolean): boolean {
 /** True when this pane has an item in the script's queue, shown or hidden while the pane works. */
 async function hasItem($: EngineInterface): Promise<boolean> {
   if (pane === null) return false
-  const base = await queueFile($, `${pane.replace(/:/g, '_')}.json`)
+  const base = await queueFile($, `${pane.replace(/:/g, '_')}.json`).catch(() => null)
+  if (base === null) return false
   for (const path of [base, `${base}.working`]) {
     try {
       await $.fs.stat(path)

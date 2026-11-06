@@ -2,6 +2,7 @@ import type { On } from 'claude-code'
 import { KEY } from './engine'
 import { expect, test } from 'claude-code/testing'
 import { mock } from 'claude-code/testing'
+import { posix } from './posix'
 
 // Every pane's footer polls herdr for the same two facts: which pane is focused, and who is waiting. These hold the
 // polling to one session for focus, and to the script's shared list for the queue.
@@ -12,11 +13,11 @@ const QUEUE = [{ pane: 'w8R:p1', workspace: 'w8R', label: 'x', kind: 'ask', ask:
 const START = { cwd: '/tmp', surface: 'terminal', isInteractive: true } as never
 const settle = () => new Promise(r => setTimeout(r, 20))
 
-function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }> = {}, opts: { hangList?: boolean } = {}) {
+function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }> = {}, opts: { hangList?: boolean; env?: Record<string, string> } = {}) {
   const runs: string[][] = []
   const timeouts: (number | undefined)[] = []
   const clock = mock.clock(on, { now: 100_000 })
-  const env: Record<string, string> = { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HOME: '/home/ubuntu', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1' }
+  const env: Record<string, string> = { CLAUDE_CONFIG_DIR: '/home/ubuntu/.claude', HOME: '/home/ubuntu', HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9B', HERDR_PANE_ID: 'w9B:p1', ...opts.env }
   on('env.get', (_$, e) => ({ value: env[e.name] }))
   on('prompt.edit', (_$, e) => ({ text: e.text, cursor: e.cursor }) as never)
   on('process.run', (_$, e) => {
@@ -29,17 +30,17 @@ function engine(on: On, files: Record<string, { text: string; mtimeMs?: number }
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('fs.read', (_$, e) => {
-    const f = files[e.path]
-    if (f === undefined) throw new Error(`ENOENT: ${e.path}`)
+    const f = files[posix(e.path)]
+    if (f === undefined) throw new Error(`ENOENT: ${posix(e.path)}`)
     return { value: f.text } as never
   })
   on('fs.stat', (_$, e) => {
-    const f = files[e.path]
-    if (f === undefined) throw new Error(`ENOENT: ${e.path}`)
+    const f = files[posix(e.path)]
+    if (f === undefined) throw new Error(`ENOENT: ${posix(e.path)}`)
     return { value: { kind: 'file', size: f.text.length, mtimeMs: f.mtimeMs ?? 0, isLink: false } } as never
   })
   on('fs.write', (_$, e) => {
-    files[e.path] = { text: e.text }
+    files[posix(e.path)] = { text: e.text }
     return { value: undefined } as never
   })
   on('command.register', () => ({ value: undefined }) as never)
@@ -166,6 +167,57 @@ test('an asleep footer refreshes the moment its pane is focused, with no poll be
   child.focus()
   await settle()
   expect(e.scriptLists()).toBe(1)
+})
+
+// On Windows herdr's socket is a named pipe that `nc -U` cannot reach: the Node watcher stands in, chosen by the OS
+// environment variable. Elsewhere the shell watcher, unchanged.
+const WINDOWS = { OS: 'Windows_NT' }
+
+test('on Windows the Node watcher is spawned, not the shell one', async ($, on) => {
+  engine(on, {}, { env: WINDOWS })
+  const child = focusChild(on)
+  await $.session.start(START)
+  await settle()
+  expect(child.starts.length).toBe(1)
+  expect(child.starts[0]![0]).toBe('node')
+  expect(posix(child.starts[0]![1]!).endsWith('/bin/focus-watch.cjs')).toBe(true)
+})
+
+test('off Windows the shell watcher is spawned, as before', async ($, on) => {
+  engine(on, {}, { env: { OS: 'Linux' } })
+  const child = focusChild(on)
+  await $.session.start(START)
+  await settle()
+  expect(child.starts.length).toBe(1)
+  expect(child.starts[0]![0]).toBe('bash')
+  expect(posix(child.starts[0]![1]!).endsWith('/bin/focus-watch.sh')).toBe(true)
+})
+
+test('on Windows a focus line from the child wakes the footer and refreshes the queue', async ($, on) => {
+  const e = engine(on, { [CACHE]: { text: JSON.stringify(QUEUE), mtimeMs: 0 } }, { env: WINDOWS })
+  const child = focusChild(on)
+  await $.session.start(START)
+  await settle()
+  await e.clock.advance(60_000)
+  await settle()
+  expect(e.scriptLists()).toBe(0)
+  child.focus()
+  await settle()
+  expect(e.scriptLists()).toBe(1)
+})
+
+test('a watcher that cannot start leaves the footer on its timer, and nothing reaches the session', async ($, on) => {
+  const e = engine(on, {}, { env: WINDOWS })
+  on('process.spawn', async function* () {
+    throw new Error('spawn node ENOENT')
+  } as never)
+  await $.session.start(START)
+  await $.prompt.edit(KEY)
+  await settle()
+  expect(e.herdrPolls()).toBe(1)
+  await e.clock.advance(2000)
+  await settle()
+  expect(e.herdrPolls()).toBe(2)
 })
 
 test('one focus child per session, started again on the next wake once it ends', async ($, on) => {

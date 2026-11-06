@@ -3,12 +3,12 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Heavy, PaneCache, PaneReport } from '../types'
 
-/** The Claude config folder, as Claude Code itself reads it from CLAUDE_CONFIG_DIR. Unset, it is ~/.claude, where Claude Code keeps it. */
+/** The Claude config folder: CLAUDE_CONFIG_DIR, else ~/.claude under HOME or, where herdr on Windows starts Claude with only USERPROFILE set, under USERPROFILE. */
 const claudeDir = async ($: EngineInterface) => {
   const dir = await $.env.get('CLAUDE_CONFIG_DIR')
   if (dir) return dir
-  const home = await $.env.get('HOME')
-  if (!home) throw new Error('neither CLAUDE_CONFIG_DIR nor HOME is set')
+  const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
+  if (!home) throw new Error('none of CLAUDE_CONFIG_DIR, HOME or USERPROFILE is set')
   return `${home}/.claude`
 }
 
@@ -260,9 +260,9 @@ async function readReports($: EngineInterface, ctxDir: string, now: number, seen
     readDir($, `${ctxDir}/cache`, now, seen.caches, cacheOf),
   ])
   return [...reports.values()]
-    .filter(row => modes.get(`${row.pane}.json`) !== true)
+    .filter(row => modes.get(`${row.pane.replace(/:/g, '_')}.json`) !== true)
     .map(row => {
-      const cache = caches.get(`${row.pane}.json`)
+      const cache = caches.get(`${row.pane.replace(/:/g, '_')}.json`)
       return cache === undefined ? row : { ...row, cache }
     })
 }

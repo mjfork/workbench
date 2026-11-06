@@ -97,7 +97,7 @@ grep -qE "Z clear w8:p2 dismissed" "$tmp/.herdr-queue/t/.log" || fail "a dismiss
 echo '{"pane":"w7:p9","workspace":"w7","ask":"x","ts":1}' > "$tmp/.herdr-queue/t/w7_p9.json"
 touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"; ny list >/dev/null
 grep -qE "Z clear w7:p9 gone" "$tmp/.herdr-queue/t/.log" || fail "a closed pane's ask is logged as gone"
-echo '{"pane":"w8:p2","mode":"agentic","driver":"w9:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
+echo '{"pane":"w8:p2","mode":"agentic","driver":"w9:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8_p2.json"
 echo "$ask" | ny stop
 grep -q "turn-mode ask" "$tmp/prompted" || fail "an agentic session's ask goes to its driver"
 jq -e '.routed > 0 and .driver == "w9:p1"' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "a routed ask is kept, with when and to whom"
@@ -149,7 +149,7 @@ test -e "$tmp/.herdr-queue/t/w8_p2.json" || fail "an ask the driver could not ta
 grep -qE "Z route-failed w8:p2 w9:p1 " "$tmp/.herdr-queue/t/.log" || fail "a failed route is logged"
 touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
 ny list | jq -e '[.[] | select(.pane=="w8:p2" and (.ask | startswith("[its driver w9:p1 could not be reached]")))] | length == 1' >/dev/null || fail "an ask the driver could not be handed shows at once, marked"
-echo '{"pane":"w8:p2","mode":"agentic","driver":"w7:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
+echo '{"pane":"w8:p2","mode":"agentic","driver":"w7:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8_p2.json"
 touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
 ny list | jq -e '[.[] | select(.pane=="w8:p2")] | length == 1' >/dev/null || fail "an ask whose driver is gone shows"
 # A routed ask whose driver is gone (w7:p1 is no live agent) shows at once, marked so, inside the grace period too.
@@ -160,9 +160,9 @@ touch -t 200001010000 "$tmp/.herdr-queue/t/.list-cache"
 ny list | jq -e '[.[] | select(.pane=="w8:p2" and (.ask | startswith("[its driver w7:p1 is gone]")))] | length == 1' >/dev/null || fail "a routed ask whose driver is gone shows at once, marked"
 # A new driver has not seen the ask: the same ask reaches it, and the item names it. (w8:p3 and w9:p1 are both live.)
 ny clear w8:p2
-echo '{"pane":"w8:p2","mode":"agentic","driver":"w8:p3"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
+echo '{"pane":"w8:p2","mode":"agentic","driver":"w8:p3"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8_p2.json"
 : > "$tmp/prompted"; echo "$ask" | ny stop
-echo '{"pane":"w8:p2","mode":"agentic","driver":"w9:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
+echo '{"pane":"w8:p2","mode":"agentic","driver":"w9:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8_p2.json"
 echo "$ask" | ny stop
 [ "$(grep -c 'turn-mode ask' "$tmp/prompted")" = 2 ] || fail "after a driver change, the same ask reaches the new driver"
 jq -e '.driver == "w9:p1"' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "the item names the driver that has it"
@@ -175,7 +175,7 @@ for end in withdraw dismiss; do
   [ "$(grep -c 'turn-mode ask' "$tmp/prompted")" = 1 ] || fail "after $end, the same ask reaches the driver again"
 done
 rm "$tmp/.herdr-queue/t/w8_p2.json"
-rm "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p2.json"
+rm "$CLAUDE_CONFIG_DIR/ctx/mode/w8_p2.json"
 echo "$hostile" | ny stop
 jq -e '.ask | test("[\\x{0}-\\x{8}\\x{b}-\\x{1f}\\x{202e}]") | not' "$tmp/.herdr-queue/t/w8_p2.json" >/dev/null || fail "a queued ask carries no control characters"
 [ -z "$(find "$tmp" -name .last-stop-input.json)" ] || fail "a Stop input is not kept on disk"
@@ -233,15 +233,56 @@ listed_owner() { ny list | jq -r '.[] | select(.pane=="w8:p3" and .kind=="blocke
 dialogs() { sleep 0.3; grep -c "turn-mode dialog" "$tmp/prompted" || true; }
 stale; [ "$(listed_owner)" = w8:p2 ] || fail "a dialog no agent drives keeps the first-tab owner"
 [ "$(dialogs)" = 0 ] || fail "no driver, no one is told"
-echo '{"pane":"w8:p3","mode":"agentic","driver":"w9:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p3.json"
+echo '{"pane":"w8:p3","mode":"agentic","driver":"w9:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8_p3.json"
 stale; [ "$(listed_owner)" = w9:p1 ] || fail "a driven pane's dialog is owned by its driver, and still listed"
 [ "$(dialogs)" = 1 ] || fail "the driver is told of the dialog"
 grep "turn-mode dialog" "$tmp/prompted" | grep -q "send-keys w8:p3" || fail "the driver is told how to answer it"
 stale; ny list >/dev/null
 [ "$(dialogs)" = 1 ] || fail "the driver is told once per stretch"
-echo '{"pane":"w8:p3","mode":"agentic","driver":"w7:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p3.json"
+echo '{"pane":"w8:p3","mode":"agentic","driver":"w7:p1"}' > "$CLAUDE_CONFIG_DIR/ctx/mode/w8_p3.json"
 stale; [ "$(listed_owner)" = w8:p2 ] || fail "a driver that is not a live agent is not the owner"
 [ "$(dialogs)" = 1 ] || fail "a driver that is not live is not told"
 test ! -e "$tmp/.herdr-queue/t/.dialog-w8_p3" || fail "the stretch ends when no live driver has the dialog"
-rm -f "$CLAUDE_CONFIG_DIR/ctx/mode/w8:p3.json"
+rm -f "$CLAUDE_CONFIG_DIR/ctx/mode/w8_p3.json"
+
+# A jq that writes CRLF unless it is given -b (the native Windows build), and one that rejects -b (an older jq): the
+# queue holds the same text either way, no carriage return in it, and `jq -e` still decides by its exit code.
+REAL_JQ=$(command -v jq); export REAL_JQ
+mkdir -p "$tmp/fake"
+cat > "$tmp/fake/jq" <<'FAKE'
+#!/usr/bin/env bash
+# The real jq gets -b only if it knows it (jq 1.7 and later; Debian's 1.6 does not), and never twice.
+bin=0; args=(); for a in "$@"; do if [[ $a == -b || $a == --binary ]]; then bin=1; else args+=("$a"); fi; done
+rb=(); "$REAL_JQ" -b -n . >/dev/null 2>&1 && rb=(-b)
+if [[ ${FAKE_JQ_OLD:-0} == 1 ]]; then
+  [[ $bin == 1 ]] && { echo "jq: Unknown arguments" >&2; exit 2; }
+  exec "$REAL_JQ" ${rb[@]+"${rb[@]}"} ${args[@]+"${args[@]}"}   # what an older jq does everywhere else: plain LF output
+fi
+[[ $bin == 1 ]] && exec "$REAL_JQ" ${rb[@]+"${rb[@]}"} ${args[@]+"${args[@]}"}
+out=$(mktemp); "$REAL_JQ" ${args[@]+"${args[@]}"} > "$out"; rc=$?
+awk '{ printf "%s\r\n", $0 }' "$out"; rm -f "$out"; exit $rc
+FAKE
+chmod +x "$tmp/fake/jq"
+# Carriage returns are counted with tr: MSYS grep ignores them.
+has_cr() { [ "$(tr -cd '\r' < "$1" | wc -c)" -gt 0 ]; }
+multi='{"last_assistant_message":"x\n\n## ⚑ Needs you\n**Ask:** ship\u001b]0;pwned\u0007 it‮?​\n**Options:** a, b\n**Reply with:** `1`"}'
+for jqkind in crlf old; do
+  rm -f "$tmp/.herdr-queue/t/"*.json "$tmp/.herdr-queue/t/.list-cache"
+  if [ $jqkind = old ]; then export FAKE_JQ_OLD=1; else unset FAKE_JQ_OLD; fi
+  echo "$multi" | PATH="$tmp/fake:$PATH" ny stop
+  item_file="$tmp/.herdr-queue/t/w8_p2.json"
+  test -e "$item_file" || fail "$jqkind jq: the ask is queued"
+  ! has_cr "$item_file" || fail "$jqkind jq: the queued ask has no carriage return"
+  ! LC_ALL=C grep -q $'[\001-\010\013-\037\177]' "$item_file" || fail "$jqkind jq: the control characters are still stripped"
+  jq -e '.ask | test("[\\x{202e}\\x{200b}]") | not' "$item_file" >/dev/null || fail "$jqkind jq: the bidi range is still stripped"
+  jq -e '.ask == "**Ask:** ship]0;pwned it?\n**Options:** a, b\n**Reply with:** `1`"' "$item_file" >/dev/null || fail "$jqkind jq: a multi-line ask stays multi-line"
+  # The same ask again keeps its item: jq -e answers by exit code through the shim.
+  jq '.ts = 1000' "$item_file" > "$tmp/i" && mv "$tmp/i" "$item_file"
+  echo "$multi" | PATH="$tmp/fake:$PATH" ny stop
+  jq -e '.ts == 1000' "$item_file" >/dev/null || fail "$jqkind jq: jq -e keeps the same ask's first-asked time"
+  PATH="$tmp/fake:$PATH" ny list > "$tmp/listed"
+  ! has_cr "$tmp/listed" || fail "$jqkind jq: the list has no carriage return"
+  jq -e '[.[] | select(.pane=="w8:p2" and .kind=="ask")] | length == 1' "$tmp/listed" >/dev/null || fail "$jqkind jq: the list shows the ask"
+done
+unset FAKE_JQ_OLD
 echo "needs-you.sh: all checks passed"

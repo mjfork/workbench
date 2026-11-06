@@ -3,12 +3,15 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { isPeerOrigin, keyOf, MODE_REL, nextMode, parseMode, textFor } from './modes'
 
-/** The Claude config folder, as Claude Code itself reads it from CLAUDE_CONFIG_DIR. Unset, it is ~/.claude, where Claude Code keeps it. */
+/** A pane id as a file name: NTFS reads a colon as an alternate data stream, so `w9B:p1` is stored as `w9B_p1`. The pane id inside the file stays real. */
+const fileName = (pane: string) => pane.replace(/:/g, '_')
+
+/** The Claude config folder: CLAUDE_CONFIG_DIR, else ~/.claude under HOME or, where herdr on Windows starts Claude with only USERPROFILE set, under USERPROFILE. */
 const claudeDir = async ($: EngineInterface) => {
   const dir = await $.env.get('CLAUDE_CONFIG_DIR')
   if (dir) return dir
-  const home = await $.env.get('HOME')
-  if (!home) throw new Error('neither CLAUDE_CONFIG_DIR nor HOME is set')
+  const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
+  if (!home) throw new Error('none of CLAUDE_CONFIG_DIR, HOME or USERPROFILE is set')
   return `${home}/.claude`
 }
 
@@ -46,7 +49,7 @@ let poll: { cancel: () => void } | null = null
 /** This pane's mode, read fresh for each prompt (a toggle takes effect on the next one). */
 /** This pane's mode: its file when one is set, else async. */
 async function modeNow($: EngineInterface) {
-  const text = pane === null ? null : await $.fs.read(`${await claudeDir($)}/${MODE_REL}/${pane}.json`).then(String, () => null)
+  const text = pane === null ? null : await $.fs.read(`${await claudeDir($)}/${MODE_REL}/${fileName(pane)}.json`).then(String, () => null)
   return text === null ? { mode: 'async' as const, driver: null, driverName: null } : parseMode(text)
 }
 
@@ -85,7 +88,7 @@ async function toggle($: EngineInterface) {
   await wake($)
   const mode = nextMode(await read($, shown))
   const file = { pane, mode, driver: null, setBy: 'human', at: await $.clock.now() }
-  await $.fs.write(`${await claudeDir($)}/${MODE_REL}/${pane}.json`, JSON.stringify(file) + '\n')
+  await $.fs.write(`${await claudeDir($)}/${MODE_REL}/${fileName(pane)}.json`, JSON.stringify(file) + '\n')
   await update($, shown, () => mode)
 }
 

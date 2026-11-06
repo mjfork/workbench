@@ -2,3 +2,6 @@
 node_modules/
 tmp/
 .claude-plugin/types/
+
+.scratch/
+docs/agents/

@@ -16,7 +16,7 @@ grep -q 'ctx 44% (424k/967k)' <<<"$l1" || fail "context on line 1, against the t
 grep -q '\[app\]' <<<"$l1" || fail "project on line 1"
 grep -q 'Opus' <<<"$l1" || fail "model on line 1"
 grep -q '/…/app' <<<"$l1" || fail "a deep directory shows its first and last parts"
-grep -q 'session 12% (resets .* UTC)' <<<"$l2" || fail "session usage in the chosen time zone"
+grep -Eq 'session 12% \(resets .* (UTC|GMT)\)' <<<"$l2" || fail "session usage in the chosen time zone"
 grep -q 'week 56%' <<<"$l2" || fail "week usage"
 grep -q '^session .* · week .* · \$3.46$' <<<"$l2" || fail "line 2 is session, week, then cost"
 [ "$l3" = 'dev@example.com · Example Org' ] || fail "line 3 is the login alone, read from CLAUDE_CONFIG_DIR"
@@ -68,7 +68,7 @@ mkdir -p "$tmp/bin" "$tmp/count"
 for t in jq date; do printf '#!/bin/bash\necho x >> "%s/count/%s"\nexec %s "$@"\n' "$tmp" "$t" "$(command -v $t)" > "$tmp/bin/$t"; chmod +x "$tmp/bin/$t"; done
 mkdir -p "$tmp/cached"; cp "$tmp/profile/.claude.json" "$tmp/cached/.claude.json"
 draw() { echo "$1" | PATH="$tmp/bin:$PATH" HOME="$tmp" CLAUDE_CONFIG_DIR="$tmp/cached" STATUSLINE_TZ=UTC bash "$here/statusline.sh" | plain; }
-runs() { wc -l < "$tmp/count/$1" 2>/dev/null | tr -d ' ' || echo 0; }
+runs() { { wc -l < "$tmp/count/$1"; } 2>/dev/null | tr -d ' ' || echo 0; }
 first="$(draw "$in")"; rm -f "$tmp/count/"*
 out="$(draw "$in")"
 [ "$out" = "$first" ] || fail "a cached redraw draws the same"
