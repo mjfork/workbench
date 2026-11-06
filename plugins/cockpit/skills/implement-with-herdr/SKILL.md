@@ -185,7 +185,9 @@ worker that is idle between tasks and above 100k.
    <integration-branch>`, then `/clear` (a restart on `--model sonnet --effort medium` if it runs another tier), and
    `/code-review medium --fix` (base: the branch the integration branch will merge into). Merge `review`, then run the tests.
 2. Close the tickets the way the tracker closes work. Close the tabs you opened, then `git worktree remove` each worktree
-   and `git branch -d` each merged lane and review branch.
+   and `git branch -d` each merged lane and review branch. On Windows a closed tab's shell can still hold its worktree folder
+   for a few seconds: wait before removing. If `git worktree remove` still prints "failed to delete ... Permission denied"
+   (exit 255), the worktree is already unregistered and emptied, so once the process has ended `rmdir` the empty folder.
 3. Report the table: ticket, tier, lane, result, commit, usd, plus the total (workers plus this session's own ctx
    file). List the three costliest tickets with their tier: that is where the tiering was wrong, if anywhere.
 

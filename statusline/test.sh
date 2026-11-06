@@ -68,7 +68,7 @@ mkdir -p "$tmp/bin" "$tmp/count"
 for t in jq date; do printf '#!/bin/bash\necho x >> "%s/count/%s"\nexec %s "$@"\n' "$tmp" "$t" "$(command -v $t)" > "$tmp/bin/$t"; chmod +x "$tmp/bin/$t"; done
 mkdir -p "$tmp/cached"; cp "$tmp/profile/.claude.json" "$tmp/cached/.claude.json"
 draw() { echo "$1" | PATH="$tmp/bin:$PATH" HOME="$tmp" CLAUDE_CONFIG_DIR="$tmp/cached" STATUSLINE_TZ=UTC bash "$here/statusline.sh" | plain; }
-runs() { wc -l < "$tmp/count/$1" 2>/dev/null | tr -d ' ' || echo 0; }
+runs() { { wc -l < "$tmp/count/$1"; } 2>/dev/null | tr -d ' ' || echo 0; }
 first="$(draw "$in")"; rm -f "$tmp/count/"*
 out="$(draw "$in")"
 [ "$out" = "$first" ] || fail "a cached redraw draws the same"
